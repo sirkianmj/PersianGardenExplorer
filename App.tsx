@@ -5,7 +5,7 @@ import PDFReader from './components/PDFReader';
 import DatabaseModal from './components/DatabaseModal';
 import { View, Paper, HistoricalPeriod, ResearchTopic, SearchFilters, AppSettings } from './types';
 import { searchAcademicPapers } from './services/geminiService';
-import { deleteFile } from './services/storageService';
+import { deleteFile, openExternalLink } from './services/storageService';
 
 // --- Persian Dictionaries ---
 const PERIOD_LABELS: Record<HistoricalPeriod, string> = {
@@ -369,15 +369,13 @@ const App: React.FC = () => {
                                     </div>
                                     <div className="flex items-center gap-2 self-end md:self-start flex-shrink-0">
                                         {result.url && (
-                                            <a 
-                                                href={result.url} 
-                                                target="_blank" 
-                                                rel="noreferrer"
+                                            <button 
+                                                onClick={() => openExternalLink(result.url!)}
                                                 className="text-gray-400 hover:text-tile-blue p-2 rounded-full transition hover:bg-cyan-50"
                                                 title="مشاهده لینک اصلی"
                                             >
                                                 <ExternalLinkIcon />
-                                            </a>
+                                            </button>
                                         )}
                                         <button 
                                             onClick={() => handleQuickAdd(result)}

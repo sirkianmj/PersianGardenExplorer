@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Paper, Note } from '../types';
-import { getFile } from '../services/storageService';
+import { getFile, openExternalLink } from '../services/storageService';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Initialize PDF.js worker
@@ -49,7 +49,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
       try {
         let url = paper.url;
 
-        // If local, fetch blob from IndexedDB
+        // If local, fetch blob from IndexedDB or Tauri FS
         if (paper.isLocal) {
           const blob = await getFile(paper.id);
           if (blob) {
@@ -260,14 +260,12 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
                     <div className="mt-12 p-6 bg-red-50 border border-red-100 rounded-lg text-center">
                         <p className="text-red-800 font-medium mb-2 text-sm">{error || "فایل PDF پیوست نشده است"}</p>
                         {paper.url && (
-                             <a 
-                                href={paper.url} 
-                                target="_blank" 
-                                rel="noreferrer"
-                                className="inline-block mt-2 bg-garden-dark text-white px-6 py-2 rounded shadow hover:bg-opacity-90 transition text-sm"
+                             <button 
+                                onClick={() => openExternalLink(paper.url!)}
+                                className="inline-block mt-2 bg-garden-dark text-white px-6 py-2 rounded shadow hover:bg-opacity-90 transition text-sm cursor-pointer"
                             >
                                 مشاهده منبع اصلی ↗
-                            </a>
+                            </button>
                         )}
                     </div>
                 </div>

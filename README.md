@@ -73,7 +73,7 @@ Unlike general-purpose search engines, this system provides a curated environmen
 This software was conceptualized and developed as part of a specialized academic project.
 
 *   **Lead Developer:** Kian Mansouri Jamshidi
-*   **Academic Supervisor:** Dr. Jayhani
+*   **Academic Supervisor:** Dr. Jihani
 *   **Course Context:** Persian Garden Studies (باغ ایرانی)
 *   **Institution:** Shahid Beheshti University
 *   **Year:** 1404 (2025-2026)

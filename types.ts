@@ -51,6 +51,7 @@ export interface Paper {
   topic?: ResearchTopic;
   url?: string; // External URL
   localFileUrl?: string; // Blob URL for local PDF
+  localFilePath?: string; // Path for Tauri FS
   tags: string[];
   notes: Note[];
   addedAt: number;
@@ -82,4 +83,31 @@ export interface AppSettings {
   sidebarMode: 'expanded' | 'compact';
   libraryView: 'grid' | 'list';
   theme: 'light' | 'dark';
+}
+
+// --- Tauri Global Augmentation ---
+declare global {
+  interface Window {
+    __TAURI__?: {
+      fs: {
+        writeBinaryFile: (path: string, data: Uint8Array, options?: any) => Promise<void>;
+        readBinaryFile: (path: string) => Promise<Uint8Array>;
+        createDir: (path: string, options?: any) => Promise<void>;
+        exists: (path: string, options?: any) => Promise<boolean>;
+        removeFile: (path: string) => Promise<void>;
+        BaseDirectory: {
+          AppLocalData: number;
+          Document: number;
+          AppData: number;
+        };
+      };
+      path: {
+        appLocalDataDir: () => Promise<string>;
+        join: (...args: string[]) => Promise<string>;
+      };
+      shell: {
+        open: (path: string) => Promise<void>;
+      };
+    };
+  }
 }
