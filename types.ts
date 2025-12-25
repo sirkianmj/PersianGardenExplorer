@@ -3,7 +3,8 @@ export enum View {
   SEARCH = 'SEARCH',
   LIBRARY = 'LIBRARY',
   READER = 'READER',
-  SETTINGS = 'SETTINGS'
+  SETTINGS = 'SETTINGS',
+  ATLAS = 'ATLAS'
 }
 
 export enum HistoricalPeriod {

@@ -30,15 +30,50 @@ const cleanAbstract = (text: string | undefined): string => {
   return text.replace(/<[^>]*>?/gm, '').substring(0, 600) + (text.length > 600 ? '...' : '');
 };
 
+/**
+ * STRATEGY: Intelligent Query Sanitization
+ * Legacy Persian databases (SID, NoorMags) crash or give junk results if we send:
+ * 1. Boolean operators ("OR", "AND")
+ * 2. English words mixed with Persian
+ * 3. Parentheses
+ * 
+ * We create cleaners to separate the query.
+ */
+
+// Extracts only Persian text and numbers, removes booleans/punctuation
+const extractPersianQuery = (query: string): string => {
+  // Remove boolean keywords (case insensitive)
+  let clean = query.replace(/\b(OR|AND|NOT)\b/gi, ' ');
+  // Remove non-persian characters (keep numbers and spaces)
+  // Range includes Persian, Arabic, and ZWNJ
+  return clean.replace(/[^\u0600-\u06FF\s0-9]/g, '').replace(/\s+/g, ' ').trim();
+};
+
+// Extracts only English text, removes booleans/punctuation
+const extractEnglishQuery = (query: string): string => {
+   let clean = query.replace(/\b(OR|AND|NOT)\b/gi, ' ');
+   // Remove Persian characters
+   return clean.replace(/[\u0600-\u06FF]/g, '').replace(/[()"]/g, '').replace(/\s+/g, ' ').trim();
+};
+
+// Removes Booleans and Parentheses but keeps both languages (for robust engines like Google/SID)
+const cleanMixedQuery = (query: string): string => {
+    return query.replace(/\b(OR|AND|NOT)\b/gi, ' ').replace(/[()"]/g, '').replace(/\s+/g, ' ').trim();
+};
+
 // --- Real-Time Scrapers ---
 
 /**
  * Scrapes NoorMags (Specialized Iranian Magazines)
+ * CRITICAL: Must receive ONLY Persian keywords.
  */
-const fetchNoorMags = async (query: string): Promise<Partial<Paper>[]> => {
+const fetchNoorMags = async (rawQuery: string): Promise<Partial<Paper>[]> => {
     try {
-        const strictQuery = encodeURIComponent(query);
-        const targetUrl = `https://www.noormags.ir/view/fa/search?q=${strictQuery}`;
+        const smartQuery = extractPersianQuery(rawQuery);
+        if (smartQuery.length < 2) return []; // Skip if no persian text
+
+        const encodedQuery = encodeURIComponent(smartQuery);
+        const targetUrl = `https://www.noormags.ir/view/fa/search?q=${encodedQuery}`;
         const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
 
         const response = await fetch(proxyUrl);
@@ -48,8 +83,6 @@ const fetchNoorMags = async (query: string): Promise<Partial<Paper>[]> => {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
-        // NoorMags usually lists results in a list structure
-        // We look for titles which are usually in anchor tags inside specific containers
         const titleLinks = Array.from(doc.querySelectorAll('.search-result-item .title a, .article_list .title a, h3 a'));
 
         return titleLinks.map((link, index) => {
@@ -83,11 +116,15 @@ const fetchNoorMags = async (query: string): Promise<Partial<Paper>[]> => {
 
 /**
  * Scrapes Ganjoor (Persian Literature)
+ * CRITICAL: Must receive ONLY Persian keywords.
  */
-const fetchGanjoor = async (query: string): Promise<Partial<Paper>[]> => {
+const fetchGanjoor = async (rawQuery: string): Promise<Partial<Paper>[]> => {
     try {
-        const strictQuery = encodeURIComponent(query);
-        const targetUrl = `https://ganjoor.net/?s=${strictQuery}`;
+        const smartQuery = extractPersianQuery(rawQuery);
+        if (smartQuery.length < 2) return [];
+
+        const encodedQuery = encodeURIComponent(smartQuery);
+        const targetUrl = `https://ganjoor.net/?s=${encodedQuery}`;
         const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
 
         const response = await fetch(proxyUrl);
@@ -130,12 +167,23 @@ const fetchGanjoor = async (query: string): Promise<Partial<Paper>[]> => {
 
 /**
  * Scrapes SID (Scientific Information Database)
+ * Handles mixed queries better, but we strip Booleans to be safe.
+ * NOW UPDATED: Prefer Pure Persian Query for better results in Iranian DB.
  */
-const fetchSID = async (query: string): Promise<Partial<Paper>[]> => {
+const fetchSID = async (rawQuery: string): Promise<Partial<Paper>[]> => {
     try {
-        const strictQuery = encodeURIComponent(query);
-        // Using the general search endpoint
-        const targetUrl = `https://www.sid.ir/fa/search/paper/paper?q=${strictQuery}`;
+        // IMPROVEMENT: If query has Persian text, strip English completely for SID.
+        // This avoids SID matching "Garden" in English titles instead of "Bagh" in Persian.
+        let smartQuery = "";
+        if (PERSIAN_REGEX.test(rawQuery)) {
+            smartQuery = extractPersianQuery(rawQuery);
+        } else {
+            smartQuery = cleanMixedQuery(rawQuery);
+        }
+
+        const encodedQuery = encodeURIComponent(smartQuery);
+        
+        const targetUrl = `https://www.sid.ir/fa/search/paper/paper?q=${encodedQuery}`;
         const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
 
         const response = await fetch(proxyUrl);
@@ -145,9 +193,7 @@ const fetchSID = async (query: string): Promise<Partial<Paper>[]> => {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
-        // SID uses different link structures. We catch both standard paper links and viewpaper links.
         const links = Array.from(doc.querySelectorAll('a[href*="/paper/"], a[href*="ViewPaper"]'));
-        
         const uniquePapers = new Map<string, Partial<Paper>>();
 
         links.forEach((link, index) => {
@@ -160,9 +206,8 @@ const fetchSID = async (query: string): Promise<Partial<Paper>[]> => {
             if (!title || title.length < 5 || title.includes("دانلود") || title.includes("PDF")) return;
             if (uniquePapers.has(fullLink)) return;
 
-            // Attempt to find year in context
             const parentText = link.parentElement?.parentElement?.textContent || "";
-            const yearMatch = parentText.match(/[1-4][0-9]{3}/); // Persian/Gregorian year rough match
+            const yearMatch = parentText.match(/[1-4][0-9]{3}/);
 
             uniquePapers.set(fullLink, {
                 id: `sid-${index}-${Date.now()}`,
@@ -189,9 +234,22 @@ const fetchSID = async (query: string): Promise<Partial<Paper>[]> => {
 
 // --- API Fetchers (Global) ---
 
-const fetchSemanticScholar = async (query: string): Promise<Partial<Paper>[]> => {
+/**
+ * Semantic Scholar
+ * CRITICAL: Should receive primarily English if possible, or mixed. 
+ * Persian-only queries often fail or return nothing.
+ */
+const fetchSemanticScholar = async (rawQuery: string): Promise<Partial<Paper>[]> => {
   try {
-    const targetUrl = `${SEMANTIC_SCHOLAR_BASE}?query=${encodeURIComponent(query)}&limit=8&fields=${SEMANTIC_FIELDS}`;
+    let smartQuery = extractEnglishQuery(rawQuery);
+    
+    // Fallback: If no English text found (user typed only Persian), use the raw Persian
+    // But clean the booleans out.
+    if (smartQuery.length < 3) {
+        smartQuery = cleanMixedQuery(rawQuery);
+    }
+
+    const targetUrl = `${SEMANTIC_SCHOLAR_BASE}?query=${encodeURIComponent(smartQuery)}&limit=8&fields=${SEMANTIC_FIELDS}`;
     const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
     
     const response = await fetch(proxyUrl);
@@ -227,9 +285,12 @@ const fetchSemanticScholar = async (query: string): Promise<Partial<Paper>[]> =>
   }
 };
 
-const fetchCrossRef = async (query: string): Promise<Partial<Paper>[]> => {
+const fetchCrossRef = async (rawQuery: string): Promise<Partial<Paper>[]> => {
   try {
-    const targetUrl = `${CROSSREF_BASE}?query.bibliographic=${encodeURIComponent(query)}&rows=10&sort=relevance`;
+    let smartQuery = extractEnglishQuery(rawQuery);
+    if (smartQuery.length < 3) smartQuery = cleanMixedQuery(rawQuery);
+
+    const targetUrl = `${CROSSREF_BASE}?query.bibliographic=${encodeURIComponent(smartQuery)}&rows=10&sort=relevance`;
     const response = await fetch(targetUrl);
     if (!response.ok) return [];
     
@@ -268,34 +329,32 @@ export const searchAcademicPapers = async (
   topic: ResearchTopic
 ): Promise<Partial<Paper>[]> => {
   
-  const isQueryPersian = isPersian(query);
+  // Clean basic input
   let searchString = query;
 
-  // If query is English, optimize for Global APIs
-  if (!isQueryPersian) {
-      searchString = `"${query}" AND ("Persian Garden" OR "Iranian Architecture" OR "Islamic Art")`;
-  }
-  
-  // Append period if selected
+  // Append period if selected (but keep it simple)
   if (period && period !== HistoricalPeriod.ALL) {
       let periodTerm = period.toString();
       if (periodTerm.includes('&')) {
           periodTerm = periodTerm.split('&')[0].trim();
       }
+      // Add period to search string only if not already there
       if (!searchString.includes(periodTerm)) {
           searchString += ` ${periodTerm}`;
       }
   }
   
-  console.log(`Executing Search: [${searchString}]`);
+  console.log(`Executing Distributed Search: [${searchString}]`);
   
-  // Execute all fetches in parallel using Promise.allSettled to ensure one failure doesn't stop others
+  // Note: We pass the 'searchString' to all, but each fetcher now internalizes 
+  // the logic to strip the parts of the string it doesn't understand.
+  
   const results = await Promise.allSettled([
-      fetchSID(query),          // Persian
-      fetchNoorMags(query),     // Persian
-      fetchGanjoor(query),      // Persian
-      fetchSemanticScholar(searchString), // Global
-      fetchCrossRef(searchString)         // Global
+      fetchSID(searchString),          
+      fetchNoorMags(searchString),     
+      fetchGanjoor(searchString),      
+      fetchSemanticScholar(searchString), 
+      fetchCrossRef(searchString)         
   ]);
 
   let combined: Partial<Paper>[] = [];
@@ -309,8 +368,10 @@ export const searchAcademicPapers = async (
   // Post-processing: Deduplicate by title similarity or exact ID
   const uniqueMap = new Map();
   combined.forEach(p => {
-      if(!uniqueMap.has(p.title)) {
-          uniqueMap.set(p.title, p);
+      // Basic normalization for dedupe
+      const normTitle = p.title?.toLowerCase().replace(/\s+/g, ' ').trim();
+      if(normTitle && !uniqueMap.has(normTitle)) {
+          uniqueMap.set(normTitle, p);
       }
   });
 

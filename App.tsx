@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import PDFReader from './components/PDFReader';
 import DatabaseModal from './components/DatabaseModal';
+import IranMap from './components/IranMap';
 import { View, Paper, HistoricalPeriod, ResearchTopic, SearchFilters, AppSettings } from './types';
 import { searchAcademicPapers } from './services/geminiService';
 import { deleteFile, openExternalLink } from './services/storageService';
@@ -75,7 +76,7 @@ const App: React.FC = () => {
   // --- State ---
   const [currentView, setCurrentView] = useState<View>(View.SEARCH);
   const [library, setLibrary] = useState<Paper[]>([]);
-  const [librarySearchQuery, setLibrarySearchQuery] = useState(''); // New Library Search State
+  const [librarySearchQuery, setLibrarySearchQuery] = useState('');
   const [currentPaper, setCurrentPaper] = useState<Paper | null>(null);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [paperToEdit, setPaperToEdit] = useState<Paper | null>(null);
@@ -142,19 +143,31 @@ const App: React.FC = () => {
       setSettings(prev => ({ ...prev, libraryView: view }));
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!filters.query.trim()) return;
+  // Reusable Search Execution Logic
+  const executeSearch = async (query: string, period: HistoricalPeriod, topic: ResearchTopic) => {
+    if (!query.trim()) return;
     setIsSearching(true);
     setSearchResults([]);
     try {
-        const results = await searchAcademicPapers(filters.query, filters.period, filters.topic);
+        const results = await searchAcademicPapers(query, period, topic);
         setSearchResults(results);
     } catch (error) {
         alert("جستجو با خطا مواجه شد. لطفاً اتصال اینترنت خود را بررسی کنید.");
     } finally {
         setIsSearching(false);
     }
+  };
+
+  const handleSearchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    executeSearch(filters.query, filters.period, filters.topic);
+  };
+
+  // Handler for Map Clicks
+  const handleMapSearch = (smartQuery: string) => {
+    setFilters(prev => ({ ...prev, query: smartQuery }));
+    setCurrentView(View.SEARCH);
+    executeSearch(smartQuery, filters.period, filters.topic);
   };
 
   const handleQuickAdd = (paper: Partial<Paper>) => {
@@ -236,6 +249,7 @@ const App: React.FC = () => {
   const getViewTitle = () => {
     switch(currentView) {
         case View.SEARCH: return 'کاوش در منابع';
+        case View.ATLAS: return 'اطلس باغ‌های ایرانی';
         case View.LIBRARY: return 'کتابخانه من';
         case View.READER: return 'سالن مطالعه';
         case View.SETTINGS: return 'تنظیمات';
@@ -279,7 +293,7 @@ const App: React.FC = () => {
                         کاوش علمی در منابع معماری
                     </h2>
                     
-                    <form onSubmit={handleSearch} className="space-y-4 max-w-4xl mx-auto relative z-10">
+                    <form onSubmit={handleSearchSubmit} className="space-y-4 max-w-4xl mx-auto relative z-10">
                         <div className="flex flex-col md:flex-row gap-4">
                             <div className="flex-1 relative group">
                                 <div className="absolute top-3.5 right-4 text-gray-400 pointer-events-none group-focus-within:text-tile-blue transition-colors">
@@ -394,6 +408,11 @@ const App: React.FC = () => {
                     </div>
                 </div>
             </div>
+        )}
+
+        {/* Atlas/Map View */}
+        {currentView === View.ATLAS && (
+            <IranMap onProvinceSelect={handleMapSearch} />
         )}
 
         {/* Library View */}

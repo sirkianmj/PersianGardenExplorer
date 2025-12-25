@@ -22,6 +22,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const navItems = [
     { id: View.SEARCH, label: 'کاوش در منابع', icon: '🔍' },
+    { id: View.ATLAS, label: 'اطلس ایران', icon: '🗺️' },
     { id: View.LIBRARY, label: 'کتابخانه من', icon: '📚', badge: savedCount },
     { id: View.READER, label: 'سالن مطالعه', icon: '📖' },
     { id: View.SETTINGS, label: 'تنظیمات', icon: '⚙️' },
