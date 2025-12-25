@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Paper, HistoricalPeriod, ResearchTopic } from '../types';
 import { saveFile } from '../services/storageService';
@@ -55,6 +55,8 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
   const [file, setFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (initialData) {
@@ -78,6 +80,60 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
       setFile(null);
     }
   }, [initialData, isOpen]);
+
+  const handleFileSelection = (selectedFile: File) => {
+    setFile(selectedFile);
+    
+    // Intelligent Filename Parsing
+    // Try to guess metadata from filename formats like:
+    // "Author - Year - Title.pdf" or "Title - Author.pdf"
+    if (!initialData) {
+        const name = selectedFile.name.replace('.pdf', '');
+        const parts = name.split('-').map(p => p.trim());
+        
+        if (parts.length >= 3) {
+             // Heuristic: 1st is Author, 2nd is Year (if numeric), 3rd is Title
+             const possibleYear = parts[1].match(/^\d{4}$/) ? parts[1] : '';
+             if (possibleYear) {
+                 setAuthorInput(parts[0]);
+                 setFormData(prev => ({
+                     ...prev, 
+                     year: possibleYear,
+                     title: parts.slice(2).join(' - ')
+                 }));
+                 return;
+             }
+        }
+        
+        // Fallback: Just Title
+        if (!formData.title) {
+            setFormData(prev => ({...prev, title: name}));
+        }
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        const droppedFile = e.dataTransfer.files[0];
+        if (droppedFile.type === 'application/pdf') {
+            handleFileSelection(droppedFile);
+        } else {
+            alert("لطفاً فقط فایل PDF بارگذاری کنید.");
+        }
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -284,35 +340,50 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
               </div>
             </div>
 
-            <div className="bg-cyan-50 p-4 md:p-5 rounded-xl border border-cyan-100 shadow-inner">
-              <h3 className="text-sm font-bold text-cyan-900 mb-4 border-b border-cyan-200 pb-2 flex items-center gap-2">
+            {/* Drag & Drop File Area */}
+            <div 
+                className={`
+                    p-4 md:p-5 rounded-xl border-2 border-dashed shadow-inner transition-all duration-300
+                    ${isDragging ? 'bg-cyan-100 border-tile-blue scale-105' : 'bg-cyan-50 border-cyan-200'}
+                `}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+            >
+              <h3 className="text-sm font-bold text-cyan-900 mb-2 border-b border-cyan-200 pb-2 flex items-center gap-2">
                 <span className="text-lg">💾</span> فایل دیجیتال (PDF)
               </h3>
               
               {(formData.isLocal || file) ? (
                 <div className="mb-4">
                   <div className="flex items-center gap-2 text-green-800 text-sm font-medium bg-green-100/50 border border-green-200 p-3 rounded-lg">
-                    <span className="text-xl">✓</span> <span>فایل پیوست شده است</span>
+                    <span className="text-xl">✓</span> 
+                    <div className="truncate max-w-[150px]" dir="ltr">
+                        {file ? file.name : 'فایل پیوست شده است'}
+                    </div>
                   </div>
                 </div>
               ) : (
-                <div className="text-sm text-gray-400 mb-3 italic text-center">هنوز فایلی انتخاب نشده</div>
+                <div className="text-sm text-gray-500 mb-3 text-center leading-loose">
+                    فایل را اینجا رها کنید<br/>
+                    <span className="text-xs opacity-70">یا برای انتخاب کلیک کنید</span>
+                </div>
               )}
 
-              <label className="cursor-pointer block w-full bg-white border-2 border-dashed border-cyan-300 text-cyan-700 py-3 px-3 rounded-lg text-center text-sm hover:bg-cyan-50 hover:border-cyan-400 transition-all">
+              <label className="cursor-pointer block w-full bg-white border border-cyan-300 text-cyan-700 py-3 px-3 rounded-lg text-center text-sm hover:bg-cyan-50 hover:border-cyan-400 transition-all shadow-sm">
                 {formData.isLocal || file ? 'جایگزینی فایل' : 'انتخاب فایل PDF'}
                 <input 
+                  ref={fileInputRef}
                   type="file" 
                   accept=".pdf"
                   className="hidden" 
                   onChange={(e) => {
                     if (e.target.files && e.target.files[0]) {
-                      setFile(e.target.files[0]);
+                      handleFileSelection(e.target.files[0]);
                     }
                   }}
                 />
               </label>
-              {file && <p className="text-xs text-center mt-2 text-gray-500 font-sans" dir="ltr">{file.name}</p>}
             </div>
 
           </div>

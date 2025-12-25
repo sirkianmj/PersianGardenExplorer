@@ -6,7 +6,7 @@ import DatabaseModal from './components/DatabaseModal';
 import IranMap from './components/IranMap';
 import { View, Paper, HistoricalPeriod, ResearchTopic, SearchFilters, AppSettings } from './types';
 import { searchAcademicPapers } from './services/geminiService';
-import { deleteFile, openExternalLink } from './services/storageService';
+import { deletePaperRecord, getAllPapers, savePaperMetadata, exportDatabase, importDatabase, openExternalLink } from './services/storageService';
 
 // --- Persian Dictionaries ---
 const PERIOD_LABELS: Record<HistoricalPeriod, string> = {
@@ -80,6 +80,7 @@ const App: React.FC = () => {
   const [currentPaper, setCurrentPaper] = useState<Paper | null>(null);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [paperToEdit, setPaperToEdit] = useState<Paper | null>(null);
+  const [loadingLib, setLoadingLib] = useState(true);
   
   // App Settings
   const [settings, setSettings] = useState<AppSettings>({
@@ -98,20 +99,28 @@ const App: React.FC = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
+  // Initialize and Load Data
   useEffect(() => {
-    const savedLib = localStorage.getItem('pardis_library');
-    if (savedLib) {
-      setLibrary(JSON.parse(savedLib));
-    }
-    const savedSettings = localStorage.getItem('pardis_settings');
-    if (savedSettings) {
-      setSettings(JSON.parse(savedSettings));
-    }
-  }, []);
+    const loadData = async () => {
+        setLoadingLib(true);
+        try {
+            // Load Settings
+            const savedSettings = localStorage.getItem('pardis_settings');
+            if (savedSettings) {
+                setSettings(JSON.parse(savedSettings));
+            }
 
-  useEffect(() => {
-    localStorage.setItem('pardis_library', JSON.stringify(library));
-  }, [library]);
+            // Load Library from IndexedDB
+            const storedPapers = await getAllPapers();
+            setLibrary(storedPapers);
+        } catch (e) {
+            console.error("Failed to load library:", e);
+        } finally {
+            setLoadingLib(false);
+        }
+    };
+    loadData();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('pardis_settings', JSON.stringify(settings));
@@ -170,7 +179,7 @@ const App: React.FC = () => {
     executeSearch(smartQuery, filters.period, filters.topic);
   };
 
-  const handleQuickAdd = (paper: Partial<Paper>) => {
+  const handleQuickAdd = async (paper: Partial<Paper>) => {
       const newPaper: Paper = {
           ...paper,
           id: paper.id || crypto.randomUUID(),
@@ -187,10 +196,17 @@ const App: React.FC = () => {
           apiSource: paper.apiSource,
           citationCount: paper.citationCount
       };
+
+      // Persist immediately
+      await savePaperMetadata(newPaper);
       setLibrary(prev => [newPaper, ...prev]);
   };
 
-  const handleSaveDbRecord = (paper: Paper) => {
+  const handleSaveDbRecord = async (paper: Paper) => {
+    // Persist to DB
+    await savePaperMetadata(paper);
+    
+    // Update State
     setLibrary(prev => {
       const exists = prev.findIndex(p => p.id === paper.id);
       if (exists !== -1) {
@@ -205,7 +221,7 @@ const App: React.FC = () => {
   const handleDeletePaper = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if(confirm('آیا از حذف این سند از کتابخانه اطمینان دارید؟')) {
-      await deleteFile(id);
+      await deletePaperRecord(id);
       setLibrary(prev => prev.filter(p => p.id !== id));
       if(currentPaper?.id === id) setCurrentPaper(null);
     }
@@ -222,16 +238,57 @@ const App: React.FC = () => {
       setCurrentView(View.READER);
   };
 
-  const handleUpdateNote = (paperId: string, note: any) => {
-      setLibrary(prev => prev.map(p => {
-          if (p.id === paperId) {
-              return { ...p, notes: [...p.notes, note] };
-          }
-          return p;
-      }));
+  const handleUpdateNote = async (paperId: string, note: any) => {
+      // Find current paper to update
+      const targetPaper = library.find(p => p.id === paperId);
+      if (!targetPaper) return;
+
+      const updatedPaper = { ...targetPaper, notes: [...targetPaper.notes, note] };
+      
+      // Persist
+      await savePaperMetadata(updatedPaper);
+
+      // Update State
+      setLibrary(prev => prev.map(p => p.id === paperId ? updatedPaper : p));
+      
       if (currentPaper?.id === paperId) {
-          setCurrentPaper(prev => prev ? ({ ...prev, notes: [...prev.notes, note] }) : null);
+          setCurrentPaper(updatedPaper);
       }
+  };
+
+  const handleExportBackup = async () => {
+      try {
+          const json = await exportDatabase();
+          const blob = new Blob([json], {type: 'application/json'});
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `pardis-backup-${new Date().toISOString().slice(0,10)}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+      } catch (e) {
+          alert('خطا در تهیه نسخه پشتیبان');
+      }
+  };
+
+  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+          try {
+              const json = event.target?.result as string;
+              if (confirm('آیا مطمئن هستید؟ این کار اطلاعات فعلی را با نسخه پشتیبان ادغام می‌کند.')) {
+                  const imported = await importDatabase(json);
+                  setLibrary(imported); // Refresh view with imported data
+                  alert('بازیابی با موفقیت انجام شد.');
+              }
+          } catch (err) {
+              alert('فایل پشتیبان نامعتبر است.');
+          }
+      };
+      reader.readAsText(file);
   };
 
   const getBadgeColor = (source?: string) => {
@@ -424,7 +481,7 @@ const App: React.FC = () => {
                             <h2 className="text-2xl md:text-3xl font-nastaliq text-garden-dark mt-2 hidden md:block">آرشیو محلی</h2>
                             <p className="text-sm text-gray-500 mt-1 font-sans flex items-center gap-2">
                                 <span className="w-2 h-2 rounded-full bg-tile-blue inline-block"></span>
-                                {library.length} سند ذخیره شده
+                                {loadingLib ? '...' : library.length} سند ذخیره شده
                             </p>
                         </div>
                         
@@ -485,7 +542,12 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-paper-bg">
-                    {library.length === 0 ? (
+                    {loadingLib ? (
+                         <div className="text-center text-gray-400 mt-20">
+                             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-garden-dark mx-auto mb-4"></div>
+                             <p className="text-lg font-nastaliq">در حال بارگذاری آرشیو...</p>
+                         </div>
+                    ) : library.length === 0 ? (
                          <div className="text-center text-gray-400 mt-20">
                             <div className="text-5xl md:text-6xl mb-4 opacity-20">📚</div>
                             <p className="text-lg font-nastaliq">کتابخانه شما خالی است</p>
@@ -631,28 +693,44 @@ const App: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Data Sources */}
+                    {/* Data Management */}
                     <div className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-20 h-20 bg-pattern-girih opacity-10"></div>
-                        <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">منابع داده متصل</h3>
-                        <div className="flex flex-wrap gap-2 mb-6">
-                            {['SID', 'NoorMags', 'Ganjoor', 'IranArchpedia', 'Semantic Scholar'].map(s => (
-                                <span key={s} className="px-3 py-1 bg-green-50 text-green-700 text-sm rounded border border-green-100">{s}</span>
-                            ))}
-                        </div>
+                        <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">مدیریت داده‌ها (پشتیبان‌گیری)</h3>
+                        
+                        <div className="space-y-4">
+                            <button 
+                                onClick={handleExportBackup}
+                                className="w-full border border-gray-300 hover:border-tile-blue text-gray-700 hover:text-tile-blue px-4 py-3 rounded-lg transition flex items-center justify-center gap-3 bg-gray-50 hover:bg-white"
+                            >
+                                <span className="text-xl">⬇️</span>
+                                <div>
+                                    <span className="block font-bold text-sm">دریافت نسخه پشتیبان (Export)</span>
+                                    <span className="block text-[10px] opacity-70">دانلود فایل JSON شامل تمام اطلاعات</span>
+                                </div>
+                            </button>
 
-                        <div className="pt-4 border-t border-gray-100">
+                            <label className="w-full border border-gray-300 hover:border-green-600 text-gray-700 hover:text-green-700 px-4 py-3 rounded-lg transition flex items-center justify-center gap-3 bg-gray-50 hover:bg-white cursor-pointer">
+                                <span className="text-xl">⬆️</span>
+                                <div>
+                                    <span className="block font-bold text-sm">بازگردانی اطلاعات (Import)</span>
+                                    <span className="block text-[10px] opacity-70">انتخاب فایل JSON برای بازیابی</span>
+                                </div>
+                                <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
+                            </label>
+
                              <button 
                                 onClick={() => {
-                                    if(confirm("آیا مطمئن هستید؟ تمام داده‌های کتابخانه حذف خواهد شد.")) {
-                                        localStorage.removeItem('pardis_library');
-                                        setLibrary([]);
+                                    if(confirm("هشدار: تمام داده‌های کتابخانه حذف خواهد شد و قابل بازگشت نیست. ادامه می‌دهید؟")) {
+                                        // This creates a hard reset if needed
+                                        indexedDB.deleteDatabase('PardisScholarDB');
+                                        window.location.reload();
                                     }
                                 }}
-                                className="text-red-600 text-sm hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded transition border border-transparent hover:border-red-100 flex items-center gap-2 w-full justify-center"
+                                className="text-red-600 text-xs hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded transition border border-transparent hover:border-red-100 flex items-center gap-2 w-full justify-center mt-4"
                             >
-                                <span className="text-lg">🗑️</span>
-                                پاکسازی کامل پایگاه داده محلی
+                                <span>⚠️</span>
+                                حذف کامل پایگاه داده و شروع مجدد
                              </button>
                         </div>
                     </div>

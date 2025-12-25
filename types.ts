@@ -90,6 +90,7 @@ export interface AppSettings {
 declare global {
   interface Window {
     __TAURI__?: {
+      convertFileSrc: (filePath: string, protocol?: string) => string;
       fs: {
         writeBinaryFile: (path: string, data: Uint8Array, options?: any) => Promise<void>;
         readBinaryFile: (path: string) => Promise<Uint8Array>;

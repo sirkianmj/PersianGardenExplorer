@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Paper, Note } from '../types';
-import { getFile, openExternalLink } from '../services/storageService';
+import { getPdfDisplayUrl, openExternalLink } from '../services/storageService';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Initialize PDF.js worker
@@ -49,11 +49,12 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
       try {
         let url = paper.url;
 
-        // If local, fetch blob from IndexedDB or Tauri FS
+        // If local, use the storage service to get the correct URL format
+        // Web: blob:..., Tauri: asset://...
         if (paper.isLocal) {
-          const blob = await getFile(paper.id);
-          if (blob) {
-            url = URL.createObjectURL(blob);
+          const localUrl = await getPdfDisplayUrl(paper.id);
+          if (localUrl) {
+            url = localUrl;
           } else {
             throw new Error("Local file not found in database.");
           }
@@ -71,7 +72,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
         };
 
         try {
-            // Attempt 1: Direct Load
+            // Attempt 1: Direct Load (Works for Blob, Asset URLs, and CORS-friendly links)
             const loadingTask = pdfjsLib.getDocument({ ...baseParams, url: url });
             const doc = await loadingTask.promise;
             setPdfDoc(doc);
@@ -81,7 +82,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
             if (paper.isLocal) throw directError;
             console.warn("Direct load failed (likely CORS). Attempting proxy...", directError);
 
-            // Attempt 2: Load via CORS Proxy
+            // Attempt 2: Load via CORS Proxy (Only for external links)
             try {
                 const proxyUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
                 const proxyTask = pdfjsLib.getDocument({ ...baseParams, url: proxyUrl });
