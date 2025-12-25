@@ -1,11 +1,12 @@
+
 // Developed by Kian Mansouri Jamshidi
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import PDFReader from './components/PDFReader';
 import DatabaseModal from './components/DatabaseModal';
 import IranMap from './components/IranMap';
-import { View, Paper, HistoricalPeriod, ResearchTopic, SearchFilters, AppSettings } from './types';
-import { searchAcademicPapers } from './services/geminiService';
+import { View, Paper, HistoricalPeriod, ResearchTopic, SearchFilters, AppSettings, ArtWork } from './types';
+import { searchAcademicPapers, searchPersianArt } from './services/geminiService';
 import { deletePaperRecord, getAllPapers, savePaperMetadata, exportDatabase, importDatabase, openExternalLink } from './services/storageService';
 
 // --- Persian Dictionaries ---
@@ -71,6 +72,12 @@ const GridIcon = () => (
 const ListIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
 );
+const GalleryIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+);
+const PaperIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+);
 
 const App: React.FC = () => {
   // --- State ---
@@ -95,8 +102,13 @@ const App: React.FC = () => {
     topic: ResearchTopic.GENERAL,
     useGrounding: true
   });
-  const [searchResults, setSearchResults] = useState<Partial<Paper>[]>([]);
+  
+  // Search State
+  const [searchTab, setSearchTab] = useState<'papers' | 'art'>('papers');
+  const [paperResults, setPaperResults] = useState<Partial<Paper>[]>([]);
+  const [artResults, setArtResults] = useState<ArtWork[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // Initialize and Load Data
@@ -156,10 +168,27 @@ const App: React.FC = () => {
   const executeSearch = async (query: string, period: HistoricalPeriod, topic: ResearchTopic) => {
     if (!query.trim()) return;
     setIsSearching(true);
-    setSearchResults([]);
+    setPaperResults([]);
+    setArtResults([]);
+    
     try {
-        const results = await searchAcademicPapers(query, period, topic);
-        setSearchResults(results);
+        // Parallel execution of Academic search and Art search
+        // We do this to ensure both tabs are populated
+        const [pResults, aResults] = await Promise.all([
+             searchAcademicPapers(query, period, topic),
+             searchPersianArt(query)
+        ]);
+        
+        setPaperResults(pResults);
+        setArtResults(aResults);
+
+        // Auto-switch tab if one has results and the other doesn't
+        if (pResults.length === 0 && aResults.length > 0) {
+            setSearchTab('art');
+        } else if (pResults.length > 0) {
+            setSearchTab('papers');
+        }
+
     } catch (error) {
         alert("جستجو با خطا مواجه شد. لطفاً اتصال اینترنت خود را بررسی کنید.");
     } finally {
@@ -194,12 +223,37 @@ const App: React.FC = () => {
           isLocal: false,
           language: paper.language || 'fa',
           apiSource: paper.apiSource,
-          citationCount: paper.citationCount
+          citationCount: paper.citationCount,
+          docType: 'paper'
       };
 
       // Persist immediately
       await savePaperMetadata(newPaper);
       setLibrary(prev => [newPaper, ...prev]);
+  };
+
+  const handleQuickAddArt = async (art: ArtWork) => {
+      const newPaper: Paper = {
+          id: `art-${art.id}`,
+          title: art.title,
+          authors: [art.artist],
+          year: art.date || 'نامشخص',
+          source: art.department || 'Visual Archive',
+          abstract: `${art.medium} • ${art.period} • ${art.department}`,
+          url: art.museumUrl, // External Link to Museum
+          thumbnailUrl: art.highResUrl || art.imageUrl, // Full Quality Link
+          docType: 'artwork', // Distinguish from papers
+          tags: ['Visual Art', art.period],
+          notes: [],
+          addedAt: Date.now(),
+          isLocal: false,
+          language: 'en',
+          apiSource: 'Local' // Treated as local entry but remote image
+      };
+      
+      await savePaperMetadata(newPaper);
+      setLibrary(prev => [newPaper, ...prev]);
+      alert('تصویر به کتابخانه اضافه شد.');
   };
 
   const handleSaveDbRecord = async (paper: Paper) => {
@@ -395,74 +449,142 @@ const App: React.FC = () => {
                             </select>
                         </div>
                     </form>
+                    
+                    {/* Search Tabs */}
+                    <div className="flex justify-center mt-6 gap-2">
+                        <button 
+                            onClick={() => setSearchTab('papers')}
+                            className={`flex items-center gap-2 px-6 py-2 rounded-full text-sm font-medium transition-all duration-300 ${searchTab === 'papers' ? 'bg-tile-blue text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                        >
+                            <PaperIcon /> منابع متنی <span className="opacity-70 text-xs font-sans">({paperResults.length})</span>
+                        </button>
+                         <button 
+                            onClick={() => setSearchTab('art')}
+                            className={`flex items-center gap-2 px-6 py-2 rounded-full text-sm font-medium transition-all duration-300 ${searchTab === 'art' ? 'bg-clay-accent text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                        >
+                            <GalleryIcon /> آرشیو تصویری (نگارگری) <span className="opacity-70 text-xs font-sans">({artResults.length})</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-paper-bg">
-                    {searchResults.length === 0 && !isSearching && (
+                    
+                    {/* Empty State */}
+                    {paperResults.length === 0 && artResults.length === 0 && !isSearching && (
                         <div className="flex flex-col items-center justify-center h-2/3 text-gray-400">
                             <div className="text-4xl md:text-6xl mb-4 opacity-20">🏛️</div>
                             <p className="text-lg md:text-xl font-nastaliq text-gray-500 mb-2">برای دسترسی به نمایه دانشگاهی، جستجو کنید</p>
                             <p className="text-xs md:text-sm text-gray-400 border-t border-gray-300 pt-4 mt-2 px-8 text-center">
-                                منابع: SID، نورمگز، گنجور، دانشنامه معماری و منابع بین‌المللی
+                                منابع: SID، نورمگز، گنجور، موزه متروپولیتن (The Met) و منابع بین‌المللی
                             </p>
                         </div>
                     )}
-                    
-                    <div className="grid grid-cols-1 gap-4 max-w-4xl mx-auto pb-20 md:pb-0">
-                        {searchResults.map((result) => (
-                            <div 
-                                key={result.id} 
-                                className="bg-white p-5 md:p-6 rounded-lg border-r-4 border-r-transparent hover:border-r-tile-blue shadow-sm hover:shadow-md transition-all duration-300 group"
-                            >
-                                <div className="flex flex-col md:flex-row justify-between items-start gap-3 md:gap-4">
-                                    <div className="flex-1 w-full">
-                                        <div className="flex flex-wrap items-center gap-2 mb-2">
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getBadgeColor(result.apiSource)}`}>
-                                                 {SOURCE_LABELS[result.apiSource || 'Local'] || result.apiSource}
-                                            </span>
-                                            {result.citationCount !== undefined && result.citationCount > 0 && (
-                                                <span className="text-[10px] flex items-center gap-1 text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-sans">
-                                                   <StarIcon /> {result.citationCount}
+
+                    {/* Papers List */}
+                    {searchTab === 'papers' && (
+                         <div className="grid grid-cols-1 gap-4 max-w-4xl mx-auto pb-20 md:pb-0">
+                            {paperResults.map((result) => (
+                                <div 
+                                    key={result.id} 
+                                    className="bg-white p-5 md:p-6 rounded-lg border-r-4 border-r-transparent hover:border-r-tile-blue shadow-sm hover:shadow-md transition-all duration-300 group"
+                                >
+                                    <div className="flex flex-col md:flex-row justify-between items-start gap-3 md:gap-4">
+                                        <div className="flex-1 w-full">
+                                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getBadgeColor(result.apiSource)}`}>
+                                                     {SOURCE_LABELS[result.apiSource || 'Local'] || result.apiSource}
                                                 </span>
-                                            )}
-                                        </div>
-                                        <h3 
-                                            className="text-lg md:text-xl text-garden-dark font-bold cursor-pointer hover:text-tile-blue transition-colors leading-relaxed font-sans"
-                                            onClick={() => handleQuickAdd(result)}
-                                        >
-                                            {result.title}
-                                        </h3>
-                                        <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm text-gray-500 mt-2">
-                                            <span className="text-clay-accent font-medium">{result.authors?.join('، ')}</span>
-                                            <span className="text-gray-300 hidden md:inline">•</span>
-                                            <span className="font-sans bg-gray-50 px-2 rounded border border-gray-100">{result.year}</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2 self-end md:self-start flex-shrink-0">
-                                        {result.url && (
-                                            <button 
-                                                onClick={() => openExternalLink(result.url!)}
-                                                className="text-gray-400 hover:text-tile-blue p-2 rounded-full transition hover:bg-cyan-50"
-                                                title="مشاهده لینک اصلی"
+                                                {result.citationCount !== undefined && result.citationCount > 0 && (
+                                                    <span className="text-[10px] flex items-center gap-1 text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-sans">
+                                                       <StarIcon /> {result.citationCount}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <h3 
+                                                className="text-lg md:text-xl text-garden-dark font-bold cursor-pointer hover:text-tile-blue transition-colors leading-relaxed font-sans"
+                                                onClick={() => handleQuickAdd(result)}
                                             >
-                                                <ExternalLinkIcon />
+                                                {result.title}
+                                            </h3>
+                                            <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm text-gray-500 mt-2">
+                                                <span className="text-clay-accent font-medium">{result.authors?.join('، ')}</span>
+                                                <span className="text-gray-300 hidden md:inline">•</span>
+                                                <span className="font-sans bg-gray-50 px-2 rounded border border-gray-100">{result.year}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 self-end md:self-start flex-shrink-0">
+                                            {result.url && (
+                                                <button 
+                                                    onClick={() => openExternalLink(result.url!)}
+                                                    className="text-gray-400 hover:text-tile-blue p-2 rounded-full transition hover:bg-cyan-50"
+                                                    title="مشاهده لینک اصلی"
+                                                >
+                                                    <ExternalLinkIcon />
+                                                </button>
+                                            )}
+                                            <button 
+                                                onClick={() => handleQuickAdd(result)}
+                                                className="text-garden-dark hover:bg-garden-light hover:text-garden-dark p-2 rounded-full transition border border-gray-200 hover:border-garden-dark"
+                                                title="افزودن سریع به کتابخانه"
+                                            >
+                                                <PlusIcon />
                                             </button>
-                                        )}
-                                        <button 
-                                            onClick={() => handleQuickAdd(result)}
-                                            className="text-garden-dark hover:bg-garden-light hover:text-garden-dark p-2 rounded-full transition border border-gray-200 hover:border-garden-dark"
-                                            title="افزودن سریع به کتابخانه"
-                                        >
-                                            <PlusIcon />
-                                        </button>
+                                        </div>
                                     </div>
+                                    <p className="text-gray-600 mt-3 text-sm leading-relaxed text-justify border-t border-gray-50 pt-3 hidden sm:block">
+                                        {result.abstract}
+                                    </p>
                                 </div>
-                                <p className="text-gray-600 mt-3 text-sm leading-relaxed text-justify border-t border-gray-50 pt-3 hidden sm:block">
-                                    {result.abstract}
-                                </p>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
+                    
+                    {/* Art Gallery Grid */}
+                    {searchTab === 'art' && (
+                        <div className="columns-1 sm:columns-2 md:columns-3 gap-6 max-w-6xl mx-auto space-y-6 pb-20 md:pb-0" dir="ltr">
+                             {artResults.length === 0 && !isSearching && (
+                                <div className="col-span-full text-center text-gray-500 py-10 font-persian" dir="rtl">
+                                    <p>تصویری یافت نشد. لطفاً از کلمات کلیدی انگلیسی یا نام‌های خاص استفاده کنید.</p>
+                                </div>
+                             )}
+                             {artResults.map(art => (
+                                 <div key={art.id} className="break-inside-avoid bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow border border-gray-100 group">
+                                     <div className="relative overflow-hidden">
+                                         <img 
+                                            src={art.imageUrl} 
+                                            alt={art.title} 
+                                            className="w-full h-auto object-cover transform group-hover:scale-105 transition-transform duration-700 ease-out"
+                                            loading="lazy"
+                                         />
+                                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-4">
+                                             <button 
+                                                onClick={() => openExternalLink(art.highResUrl)}
+                                                className="text-white text-xs bg-white/20 backdrop-blur px-3 py-1 rounded-full hover:bg-white/40 transition"
+                                             >
+                                                مشاهده کیفیت اصلی ↗
+                                             </button>
+                                             <button 
+                                                onClick={() => handleQuickAddArt(art)}
+                                                className="bg-clay-accent text-white p-2 rounded-full hover:bg-orange-600 shadow-lg transform hover:scale-110 transition"
+                                                title="ذخیره در کتابخانه"
+                                             >
+                                                <PlusIcon />
+                                             </button>
+                                         </div>
+                                     </div>
+                                     <div className="p-4">
+                                         <h4 className="font-bold text-gray-800 text-sm mb-1 leading-snug">{art.title}</h4>
+                                         <p className="text-xs text-clay-accent font-medium mb-2">{art.artist}</p>
+                                         <div className="flex flex-wrap gap-2 text-[10px] text-gray-500 font-sans border-t border-gray-100 pt-2">
+                                             <span className="bg-gray-50 px-2 py-0.5 rounded">{art.date}</span>
+                                             <span className="bg-gray-50 px-2 py-0.5 rounded truncate max-w-[150px]">{art.period}</span>
+                                         </div>
+                                     </div>
+                                 </div>
+                             ))}
+                        </div>
+                    )}
+
                 </div>
             </div>
         )}
@@ -581,7 +703,15 @@ const App: React.FC = () => {
                                     {/* Grid View Content */}
                                     {settings.libraryView === 'grid' && (
                                         <>
-                                            <div className={`h-1.5 w-full ${paper.isLocal ? 'bg-tile-blue' : 'bg-gray-300'}`}></div>
+                                            {paper.thumbnailUrl ? (
+                                                <div className="h-32 w-full bg-gray-200 overflow-hidden relative">
+                                                    <img src={paper.thumbnailUrl} alt={paper.title} className="w-full h-full object-cover" />
+                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+                                                </div>
+                                            ) : (
+                                                <div className={`h-1.5 w-full ${paper.isLocal ? 'bg-tile-blue' : 'bg-gray-300'}`}></div>
+                                            )}
+                                            
                                             <div className="absolute top-4 left-4 md:opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 z-10 bg-white/90 p-1 rounded-lg shadow-sm backdrop-blur-sm">
                                                  <button onClick={(e) => handleEditPaper(paper, e)} className="p-1.5 text-gray-500 hover:text-tile-blue rounded transition"><EditIcon /></button>
                                                  <button onClick={(e) => handleDeletePaper(paper.id, e)} className="p-1.5 text-gray-500 hover:text-red-600 rounded transition">&times;</button>
@@ -591,10 +721,12 @@ const App: React.FC = () => {
                                                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${paper.isLocal ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-gray-50 text-gray-500 border border-gray-100'}`}>{paper.isLocal ? 'PDF' : 'Meta'}</span>
                                                     {paper.apiSource && <span className={`text-[9px] px-1 py-0.5 border rounded-full ${getBadgeColor(paper.apiSource)}`}>{SOURCE_LABELS[paper.apiSource] || paper.apiSource}</span>}
                                                 </div>
-                                                <h3 className="text-base md:text-lg font-bold text-gray-800 group-hover:text-tile-blue transition-colors line-clamp-2 leading-tight font-sans mb-2">{paper.title}</h3>
+                                                <h3 className="text-base md:text-lg font-bold text-gray-800 group-hover:text-tile-blue transition-colors line-clamp-2 leading-tight font-sans mb-2" dir={paper.docType === 'artwork' ? 'ltr' : 'rtl'}>{paper.title}</h3>
                                                 <p className="text-xs text-clay-accent font-medium mb-1 line-clamp-1">{paper.authors.join('، ')}</p>
                                                 <p className="text-xs text-gray-400 font-sans mb-3">{paper.year}</p>
-                                                <p className="text-sm text-gray-500 line-clamp-3 leading-relaxed text-justify opacity-80 hidden sm:block">{paper.abstract}</p>
+                                                {paper.docType !== 'artwork' && (
+                                                    <p className="text-sm text-gray-500 line-clamp-3 leading-relaxed text-justify opacity-80 hidden sm:block">{paper.abstract}</p>
+                                                )}
                                             </div>
                                         </>
                                     )}
@@ -602,7 +734,13 @@ const App: React.FC = () => {
                                     {/* List View Content */}
                                     {settings.libraryView === 'list' && (
                                         <>
-                                            <div className={`w-1 h-full absolute right-0 top-0 bottom-0 ${paper.isLocal ? 'bg-tile-blue' : 'bg-gray-300'}`}></div>
+                                            {paper.thumbnailUrl ? (
+                                                <div className="w-16 h-16 rounded overflow-hidden mr-3 shrink-0 ml-3">
+                                                    <img src={paper.thumbnailUrl} className="w-full h-full object-cover" />
+                                                </div>
+                                            ) : (
+                                                <div className={`w-1 h-full absolute right-0 top-0 bottom-0 ${paper.isLocal ? 'bg-tile-blue' : 'bg-gray-300'}`}></div>
+                                            )}
                                             
                                             <div className="flex-1 min-w-0 pr-3">
                                                 <h3 className="text-sm md:text-base font-bold text-gray-800 group-hover:text-tile-blue truncate">{paper.title}</h3>

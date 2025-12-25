@@ -1,4 +1,4 @@
-import { Paper, HistoricalPeriod, ResearchTopic } from '../types';
+import { Paper, HistoricalPeriod, ResearchTopic, ArtWork } from '../types';
 
 // --- Configuration ---
 // Using corsproxy.io to bypass CORS restrictions on Iranian academic sites
@@ -8,6 +8,13 @@ const SEMANTIC_SCHOLAR_BASE = 'https://api.semanticscholar.org/graph/v1/paper/se
 const SEMANTIC_FIELDS = 'paperId,title,authors,year,abstract,venue,url,openAccessPdf';
 
 const CROSSREF_BASE = 'https://api.crossref.org/works';
+
+// Museum APIs
+const MET_MUSEUM_SEARCH = 'https://collectionapi.metmuseum.org/public/collection/v1/search';
+const MET_MUSEUM_OBJECT = 'https://collectionapi.metmuseum.org/public/collection/v1/objects';
+const CLEVELAND_API = 'https://openaccess-api.clevelandart.org/api/artworks';
+const CHICAGO_API = 'https://api.artic.edu/api/v1/artworks/search';
+const CHICAGO_IIIF = 'https://www.artic.edu/iiif/2';
 
 export const initializeGemini = (apiKey: string) => {
   console.log("Initialized Academic Services");
@@ -28,6 +35,56 @@ const isPersian = (text: string): boolean => {
 const cleanAbstract = (text: string | undefined): string => {
   if (!text) return "";
   return text.replace(/<[^>]*>?/gm, '').substring(0, 600) + (text.length > 600 ? '...' : '');
+};
+
+// --- Keyword Mapping for Art Search ---
+const PERSIAN_ART_TERMS: Record<string, string> = {
+    'باغ': 'Garden',
+    'فرش': 'Carpet',
+    'قالی': 'Rug',
+    'مینیاتور': 'Miniature Painting',
+    'نگارگری': 'Illuminated Manuscript',
+    'نقاشی': 'Painting',
+    'کاشی': 'Tile',
+    'سفال': 'Ceramic',
+    'معماری': 'Architecture',
+    'صفوی': 'Safavid',
+    'تیموری': 'Timurid',
+    'قاجار': 'Qajar',
+    'زند': 'Zand',
+    'ساسانی': 'Sasanian',
+    'هخامنشی': 'Achaemenid',
+    'شکار': 'Hunt',
+    'گل': 'Flower',
+    'بلبل': 'Bird',
+    'کتاب': 'Book',
+    'نسخه': 'Manuscript',
+    'خط': 'Calligraphy',
+    'تذهیب': 'Illumination',
+    'فلز': 'Metalwork',
+    'شاهنامه': 'Shahnama',
+    'لیلی': 'Layla',
+    'مجنون': 'Majnun',
+    'خسرو': 'Khusrau',
+    'شیرین': 'Shirin',
+    'بهشت': 'Paradise'
+};
+
+const translateToEnglishArtTerm = (persianQuery: string): string => {
+    let englishQuery = "";
+    // Check for known terms
+    Object.keys(PERSIAN_ART_TERMS).forEach(term => {
+        if (persianQuery.includes(term)) {
+            englishQuery += ` ${PERSIAN_ART_TERMS[term]}`;
+        }
+    });
+    
+    // Default fallback if translation yields nothing, but user typed Persian
+    if (!englishQuery.trim()) {
+        return "Persian Art"; 
+    }
+    
+    return englishQuery.trim();
 };
 
 /**
@@ -234,17 +291,10 @@ const fetchSID = async (rawQuery: string): Promise<Partial<Paper>[]> => {
 
 // --- API Fetchers (Global) ---
 
-/**
- * Semantic Scholar
- * CRITICAL: Should receive primarily English if possible, or mixed. 
- * Persian-only queries often fail or return nothing.
- */
 const fetchSemanticScholar = async (rawQuery: string): Promise<Partial<Paper>[]> => {
   try {
     let smartQuery = extractEnglishQuery(rawQuery);
     
-    // Fallback: If no English text found (user typed only Persian), use the raw Persian
-    // But clean the booleans out.
     if (smartQuery.length < 3) {
         smartQuery = cleanMixedQuery(rawQuery);
     }
@@ -321,6 +371,207 @@ const fetchCrossRef = async (rawQuery: string): Promise<Partial<Paper>[]> => {
   }
 };
 
+// --- VISUAL ARCHIVE: Multi-Museum Search ---
+
+// 1. Cleveland Museum of Art Fetcher
+const fetchClevelandArt = async (smartQuery: string): Promise<ArtWork[]> => {
+    try {
+        // CMA handles boolean logic well. "Iran" usually gets better results than "Persian" for region.
+        const q = `${smartQuery} (Iran OR Persian OR Islamic)`;
+        const url = `${CLEVELAND_API}?q=${encodeURIComponent(q)}&has_image=1&limit=20`;
+        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
+        
+        const res = await fetch(proxyUrl);
+        const json = await res.json();
+        
+        if (!json.data) return [];
+        
+        return json.data.map((item: any) => ({
+            id: `cma-${item.id}`,
+            title: item.title,
+            artist: item.creators?.[0]?.description || 'Unknown',
+            period: item.culture?.[0] || 'Unknown',
+            date: item.creation_date || '',
+            imageUrl: item.images?.web?.url,
+            highResUrl: item.images?.print?.url || item.images?.web?.url,
+            museumUrl: item.url,
+            department: item.department || 'Cleveland Museum of Art',
+            medium: item.technique || ''
+        } as ArtWork)).filter((art: ArtWork) => art.imageUrl);
+        
+    } catch (e) {
+        console.warn("Cleveland API Error", e);
+        return [];
+    }
+};
+
+// 2. Art Institute of Chicago Fetcher
+const fetchChicagoArt = async (smartQuery: string): Promise<ArtWork[]> => {
+    try {
+        const q = `${smartQuery} Persian`;
+        const fields = 'id,title,image_id,artist_display,date_display,medium_display,place_of_origin';
+        const url = `${CHICAGO_API}?q=${encodeURIComponent(q)}&query[term][is_public_domain]=true&limit=20&fields=${fields}`;
+        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
+        
+        const res = await fetch(proxyUrl);
+        const json = await res.json();
+        
+        if (!json.data) return [];
+        
+        return json.data.map((item: any) => {
+            if (!item.image_id) return null;
+            return {
+                id: `aic-${item.id}`,
+                title: item.title,
+                artist: item.artist_display || 'Unknown',
+                period: item.place_of_origin || 'Unknown',
+                date: item.date_display || '',
+                // Construct IIIF URL: {base}/{id}/full/{size}/0/default.jpg
+                imageUrl: `${CHICAGO_IIIF}/${item.image_id}/full/400,/0/default.jpg`,
+                highResUrl: `${CHICAGO_IIIF}/${item.image_id}/full/843,/0/default.jpg`,
+                museumUrl: `https://www.artic.edu/artworks/${item.id}`,
+                department: 'Art Institute of Chicago',
+                medium: item.medium_display || ''
+            } as ArtWork;
+        }).filter(Boolean) as ArtWork[];
+    } catch (e) {
+        console.warn("Chicago API Error", e);
+        return [];
+    }
+};
+
+// 3. The Met Museum Fetcher (Existing Logic with Detail Fetching)
+const fetchMetArt = async (smartQuery: string): Promise<ArtWork[]> => {
+    try {
+        // Attempt High-Precision Search (Islamic Art)
+        const searchUrl = `${MET_MUSEUM_SEARCH}?q=${encodeURIComponent(smartQuery)}&hasImages=true&departmentId=14`;
+        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(searchUrl)}`;
+        
+        let searchRes = await fetch(proxyUrl);
+        let searchData;
+        try {
+            searchData = await searchRes.json();
+        } catch(e) {
+            searchData = { objectIDs: [] };
+        }
+        
+        let objectIDs = searchData.objectIDs || [];
+
+        // Fallback: Broader Search
+        if (objectIDs.length < 5) {
+             const broadUrl = `${MET_MUSEUM_SEARCH}?q=${encodeURIComponent(smartQuery + " Iran")}&hasImages=true`;
+             const broadProxy = `${CORS_PROXY}${encodeURIComponent(broadUrl)}`;
+             try {
+                 const broadRes = await fetch(broadProxy);
+                 const broadData = await broadRes.json();
+                 if (broadData.objectIDs) {
+                     objectIDs = [...objectIDs, ...broadData.objectIDs];
+                 }
+             } catch(e) {}
+        }
+
+        objectIDs = [...new Set(objectIDs)];
+        if (objectIDs.length === 0) return [];
+
+        const topIds = objectIDs.slice(0, 30); // Limit Met to 30 to balance with others
+        
+        const artPromises = topIds.map(async (id: any) => {
+            try {
+                const objUrl = `${MET_MUSEUM_OBJECT}/${id}`;
+                const objProxy = `${CORS_PROXY}${encodeURIComponent(objUrl)}`;
+                const objRes = await fetch(objProxy);
+                const obj = await objRes.json();
+                
+                if (!obj.primaryImageSmall) return null;
+
+                return {
+                    id: obj.objectID,
+                    title: obj.title,
+                    artist: obj.artistDisplayName || 'Unknown Artist',
+                    period: obj.period || obj.culture || 'Unknown Period',
+                    date: obj.objectDate || 'n.d.',
+                    imageUrl: obj.primaryImageSmall,
+                    highResUrl: obj.primaryImage,
+                    museumUrl: obj.objectURL,
+                    department: obj.department,
+                    medium: obj.medium || ''
+                } as ArtWork;
+            } catch (e) {
+                return null;
+            }
+        });
+
+        const results = await Promise.all(artPromises);
+        return results.filter(Boolean) as ArtWork[];
+    } catch (e) {
+        return [];
+    }
+};
+
+
+// Main Art Search Aggregator
+export const searchPersianArt = async (rawQuery: string): Promise<ArtWork[]> => {
+    let smartQuery = extractEnglishQuery(rawQuery);
+    
+    // Auto-translate if user typed Persian
+    if (smartQuery.length < 2) {
+            smartQuery = translateToEnglishArtTerm(rawQuery);
+    }
+
+    console.log(`Executing Visual Search (Multi-Source): [${smartQuery}]`);
+
+    // Fetch from all sources in parallel
+    const [metResults, clevelandResults, chicagoResults] = await Promise.all([
+        fetchMetArt(smartQuery),
+        fetchClevelandArt(smartQuery),
+        fetchChicagoArt(smartQuery)
+    ]);
+
+    const allResults = [...metResults, ...clevelandResults, ...chicagoResults];
+    const queryLower = smartQuery.toLowerCase();
+
+    // Unified Filtering Logic for Quality Control
+    const filtered = allResults.filter(art => {
+        const title = art.title.toLowerCase();
+        const medium = art.medium.toLowerCase();
+        const classification = (art as any).department ? (art as any).department.toLowerCase() : ""; // Met has dept
+
+        // 1. Is it a high-value category?
+        const isVisualArt = 
+            medium.includes("painting") || 
+            medium.includes("ink") ||
+            medium.includes("watercolor") ||
+            medium.includes("gold") ||
+            medium.includes("silver") ||
+            medium.includes("carpet") || 
+            medium.includes("silk") ||
+            medium.includes("ceramic") ||
+            medium.includes("tile") ||
+            title.includes("miniature") ||
+            title.includes("folio") ||
+            title.includes("shahnama");
+
+        // 2. Does Title match query?
+        const titleMatches = title.includes(queryLower);
+
+        // 3. Junk Filter
+        const isJunk = 
+            (title.includes("fragment") || title.includes("sherd") || title.includes("coin")) 
+            && !titleMatches;
+
+        return (isVisualArt || titleMatches) && !isJunk;
+    });
+
+    // Sort: Prioritize items that match the query in title
+    return filtered.sort((a, b) => {
+        const aMatch = a.title.toLowerCase().includes(queryLower);
+        const bMatch = b.title.toLowerCase().includes(queryLower);
+        if (aMatch && !bMatch) return -1;
+        if (!aMatch && bMatch) return 1;
+        return 0;
+    });
+};
+
 // --- Main Search Function ---
 
 export const searchAcademicPapers = async (
@@ -345,9 +596,6 @@ export const searchAcademicPapers = async (
   }
   
   console.log(`Executing Distributed Search: [${searchString}]`);
-  
-  // Note: We pass the 'searchString' to all, but each fetcher now internalizes 
-  // the logic to strip the parts of the string it doesn't understand.
   
   const results = await Promise.allSettled([
       fetchSID(searchString),          

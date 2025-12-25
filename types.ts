@@ -1,4 +1,5 @@
 
+
 export enum View {
   SEARCH = 'SEARCH',
   LIBRARY = 'LIBRARY',
@@ -65,6 +66,22 @@ export interface Paper {
   volume?: string;
   issue?: string;
   publisher?: string;
+  // New fields for Visual Archive support
+  docType?: 'paper' | 'artwork';
+  thumbnailUrl?: string;
+}
+
+export interface ArtWork {
+  id: string | number;
+  title: string;
+  artist: string;
+  period: string;
+  date: string;
+  imageUrl: string; // primaryImageSmall
+  highResUrl: string; // primaryImage
+  museumUrl: string;
+  department: string;
+  medium: string;
 }
 
 export interface SearchFilters {

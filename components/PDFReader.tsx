@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Paper, Note } from '../types';
 import { getPdfDisplayUrl, openExternalLink } from '../services/storageService';
@@ -29,9 +30,15 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
   const containerRef = useRef<HTMLDivElement>(null);
   const [showNotesMobile, setShowNotesMobile] = useState(false);
 
-  // 1. Load the PDF Document
+  // 1. Load the PDF Document (Only if it's NOT an artwork)
   useEffect(() => {
     if (!paper) return;
+
+    // Handle Artworks differently
+    if (paper.docType === 'artwork') {
+        setScale(1.0); // Reset scale for image
+        return;
+    }
 
     // Adjust initial scale based on window width
     if (window.innerWidth < 768) {
@@ -72,7 +79,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
         };
 
         try {
-            // Attempt 1: Direct Load (Works for Blob, Asset URLs, and CORS-friendly links)
+            // Attempt 1: Direct Load
             const loadingTask = pdfjsLib.getDocument({ ...baseParams, url: url });
             const doc = await loadingTask.promise;
             setPdfDoc(doc);
@@ -80,9 +87,9 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
             setIsLoading(false);
         } catch (directError: any) {
             if (paper.isLocal) throw directError;
-            console.warn("Direct load failed (likely CORS). Attempting proxy...", directError);
+            console.warn("Direct load failed. Attempting proxy...", directError);
 
-            // Attempt 2: Load via CORS Proxy (Only for external links)
+            // Attempt 2: Load via CORS Proxy
             try {
                 const proxyUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
                 const proxyTask = pdfjsLib.getDocument({ ...baseParams, url: proxyUrl });
@@ -112,9 +119,9 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
     };
   }, [paper]);
 
-  // 2. Render Page on Canvas
+  // 2. Render PDF Page on Canvas
   useEffect(() => {
-    if (!pdfDoc || !canvasRef.current) return;
+    if (!pdfDoc || !canvasRef.current || paper?.docType === 'artwork') return;
 
     const renderPage = async () => {
       try {
@@ -129,13 +136,10 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
         
         if (!context) return;
 
-        // High DPI Support
         const outputScale = window.devicePixelRatio || 1;
         
         canvas.width = Math.floor(viewport.width * outputScale);
         canvas.height = Math.floor(viewport.height * outputScale);
-        
-        // CSS sizing needs to match the viewport dimensions, not the scaled dimensions
         canvas.style.width = `${Math.floor(viewport.width)}px`;
         canvas.style.height = `${Math.floor(viewport.height)}px`;
 
@@ -176,15 +180,17 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
       id: crypto.randomUUID(),
       content: newNote,
       createdAt: Date.now(),
-      page: pageNum 
+      page: paper.docType === 'artwork' ? 1 : pageNum 
     };
     onUpdateNote(paper.id, note);
     setNewNote('');
   };
 
+  const isArtwork = paper.docType === 'artwork';
+
   return (
     <div className="flex flex-col md:flex-row h-full bg-gray-100 relative font-persian overflow-hidden">
-      {/* Main Content Area (PDF) */}
+      {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         
         {/* Top Toolbar */}
@@ -202,49 +208,69 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
             </h2>
           </div>
           
-          {/* PDF Controls */}
-          {pdfDoc && (
+          {/* Viewer Controls */}
+          {(pdfDoc || isArtwork) && (
              <div className="flex items-center space-x-2 space-x-reverse min-w-max" dir="ltr">
                 <div className="flex items-center bg-gray-100 rounded-lg p-0.5 md:p-1">
                     <button onClick={() => setScale(s => Math.max(0.4, s - 0.1))} className="px-2 hover:bg-white rounded text-sm font-bold">-</button>
                     <span className="text-xs font-mono w-8 md:w-12 text-center text-gray-600 hidden sm:inline-block">{Math.round(scale * 100)}%</span>
-                    <button onClick={() => setScale(s => Math.min(3, s + 0.1))} className="px-2 hover:bg-white rounded text-sm font-bold">+</button>
+                    <button onClick={() => setScale(s => Math.min(isArtwork ? 5 : 3, s + 0.1))} className="px-2 hover:bg-white rounded text-sm font-bold">+</button>
                 </div>
                 
-                <div className="flex items-center bg-gray-100 rounded-lg p-0.5 md:p-1">
-                    <button 
-                        onClick={() => changePage(1)} 
-                        disabled={pageNum >= numPages}
-                        className="p-1 md:p-1.5 hover:bg-white rounded disabled:opacity-30 transition"
-                    >
-                        ◀
-                    </button>
-                    <span className="text-xs font-mono w-12 md:w-20 text-center text-gray-600">
-                        {pageNum} / {numPages}
-                    </span>
-                    <button 
-                        onClick={() => changePage(-1)} 
-                        disabled={pageNum <= 1}
-                        className="p-1 md:p-1.5 hover:bg-white rounded disabled:opacity-30 transition"
-                    >
-                        ▶
-                    </button>
-                </div>
+                {/* Pagination (Only for PDF) */}
+                {!isArtwork && (
+                    <div className="flex items-center bg-gray-100 rounded-lg p-0.5 md:p-1">
+                        <button 
+                            onClick={() => changePage(1)} 
+                            disabled={pageNum >= numPages}
+                            className="p-1 md:p-1.5 hover:bg-white rounded disabled:opacity-30 transition"
+                        >
+                            ◀
+                        </button>
+                        <span className="text-xs font-mono w-12 md:w-20 text-center text-gray-600">
+                            {pageNum} / {numPages}
+                        </span>
+                        <button 
+                            onClick={() => changePage(-1)} 
+                            disabled={pageNum <= 1}
+                            className="p-1 md:p-1.5 hover:bg-white rounded disabled:opacity-30 transition"
+                        >
+                            ▶
+                        </button>
+                    </div>
+                )}
              </div>
           )}
         </div>
 
-        {/* Document Viewer Canvas - Enforced LTR to prevent RTL render issues */}
+        {/* Content Viewer */}
         <div ref={containerRef} className="flex-1 overflow-auto bg-gray-200/50 p-4 md:p-8 flex justify-center relative touch-pan-x touch-pan-y" dir="ltr">
-            {isLoading && (
+            
+            {/* 1. Artwork Viewer */}
+            {isArtwork && paper.thumbnailUrl && (
+                <div 
+                    className="relative shadow-2xl bg-white flex items-center justify-center transition-transform duration-200 ease-out origin-top"
+                    style={{ transform: `scale(${scale})` }}
+                >
+                    <img 
+                        src={paper.thumbnailUrl} 
+                        alt={paper.title} 
+                        className="max-w-full h-auto object-contain"
+                        style={{ maxHeight: 'none' }} // Allow scaling beyond viewport
+                    />
+                </div>
+            )}
+
+            {/* 2. PDF Loader */}
+            {isLoading && !isArtwork && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 z-20 backdrop-blur-sm" dir="rtl">
                     <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-garden-dark mb-4"></div>
                     <span className="text-garden-dark font-medium">در حال بارگذاری...</span>
                 </div>
             )}
 
-            {!pdfDoc && !isLoading ? (
-                /* Fallback / Metadata View - Back to RTL */
+            {/* 3. PDF Fallback / Metadata View */}
+            {!isArtwork && !pdfDoc && !isLoading && (
                 <div className="max-w-2xl w-full bg-white shadow-lg p-6 md:p-12 min-h-[500px]" dir="rtl">
                      <div className="border-b-2 border-garden-dark pb-6 mb-8">
                         <h1 className="text-2xl md:text-3xl font-bold text-garden-dark mb-4 leading-normal">{paper.title}</h1>
@@ -252,9 +278,9 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
                     </div>
                     
                     <div className="prose max-w-none">
-                        <h3 className="text-lg text-gray-800 mb-2 font-bold">چکیده</h3>
+                        <h3 className="text-lg text-gray-800 mb-2 font-bold">چکیده / توضیحات</h3>
                         <p className="text-gray-700 leading-relaxed text-justify mb-8 text-base">
-                            {paper.abstract || "چکیده در دسترس نیست."}
+                            {paper.abstract || "توضیحی در دسترس نیست."}
                         </p>
                     </div>
 
@@ -270,8 +296,10 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
                         )}
                     </div>
                 </div>
-            ) : (
-                /* Canvas Render */
+            )}
+            
+            {/* 4. PDF Canvas */}
+            {!isArtwork && pdfDoc && (
                 <div className="shadow-xl">
                      <canvas ref={canvasRef} className="bg-white block max-w-full" />
                 </div>
@@ -288,7 +316,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
         </button>
       </div>
 
-      {/* Side Panel: Annotations (Responsive) */}
+      {/* Side Panel: Annotations */}
       <div className={`
         fixed md:relative inset-y-0 right-0 z-40 md:z-auto
         w-80 bg-white border-r border-gray-200 flex flex-col shadow-xl md:shadow-none
@@ -316,7 +344,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
                     <p className="whitespace-pre-wrap leading-relaxed">{note.content}</p>
                     <div className="mt-2 pt-2 border-t border-yellow-200/50 text-[10px] text-gray-500 flex justify-between items-center font-sans">
                         <span>{new Date(note.createdAt).toLocaleDateString('fa-IR')}</span>
-                        {note.page && (
+                        {!isArtwork && note.page && (
                             <button 
                                 onClick={() => {
                                     setPageNum(note.page!);
@@ -351,7 +379,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
                 disabled={!newNote.trim()}
                 className="mt-3 w-full bg-garden-dark text-white py-2.5 rounded text-sm font-medium hover:bg-opacity-90 disabled:opacity-50 transition shadow-sm"
             >
-                ثبت یادداشت {pdfDoc ? `(صفحه ${pageNum})` : ''}
+                ثبت یادداشت {isArtwork ? '(تصویر)' : (pdfDoc ? `(صفحه ${pageNum})` : '')}
             </button>
         </div>
       </div>
