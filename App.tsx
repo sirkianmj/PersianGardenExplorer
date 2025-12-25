@@ -5,8 +5,9 @@ import Sidebar from './components/Sidebar';
 import PDFReader from './components/PDFReader';
 import DatabaseModal from './components/DatabaseModal';
 import IranMap from './components/IranMap';
-import { View, Paper, HistoricalPeriod, ResearchTopic, SearchFilters, AppSettings, ArtWork } from './types';
+import { View, Paper, HistoricalPeriod, ResearchTopic, SearchFilters, AppSettings, ArtWork, TravelogueChunk } from './types';
 import { searchAcademicPapers, searchPersianArt } from './services/geminiService';
+import { searchTravelogues } from './services/travelogueService';
 import { deletePaperRecord, getAllPapers, savePaperMetadata, exportDatabase, importDatabase, openExternalLink } from './services/storageService';
 
 // --- Persian Dictionaries ---
@@ -78,6 +79,9 @@ const GalleryIcon = () => (
 const PaperIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
 );
+const BookIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+);
 
 const App: React.FC = () => {
   // --- State ---
@@ -107,6 +111,8 @@ const App: React.FC = () => {
   const [searchTab, setSearchTab] = useState<'papers' | 'art'>('papers');
   const [paperResults, setPaperResults] = useState<Partial<Paper>[]>([]);
   const [artResults, setArtResults] = useState<ArtWork[]>([]);
+  const [travelogueResults, setTravelogueResults] = useState<TravelogueChunk[]>([]);
+  const [selectedTravelogue, setSelectedTravelogue] = useState<TravelogueChunk | null>(null); // For Modal
   const [isSearching, setIsSearching] = useState(false);
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -170,19 +176,21 @@ const App: React.FC = () => {
     setIsSearching(true);
     setPaperResults([]);
     setArtResults([]);
+    setTravelogueResults([]);
     
     try {
-        // Parallel execution of Academic search and Art search
-        // We do this to ensure both tabs are populated
-        const [pResults, aResults] = await Promise.all([
+        // Parallel execution of Academic search, Art search, and Travelogue search
+        const [pResults, aResults, tResults] = await Promise.all([
              searchAcademicPapers(query, period, topic),
-             searchPersianArt(query)
+             searchPersianArt(query),
+             searchTravelogues(query)
         ]);
         
         setPaperResults(pResults);
         setArtResults(aResults);
+        setTravelogueResults(tResults);
 
-        // Auto-switch tab if one has results and the other doesn't
+        // Auto-switch tab logic
         if (pResults.length === 0 && aResults.length > 0) {
             setSearchTab('art');
         } else if (pResults.length > 0) {
@@ -467,16 +475,48 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-paper-bg">
+                <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-paper-bg space-y-8">
                     
+                    {/* Historical Travelogues Section (Appears first if relevant) */}
+                    {travelogueResults.length > 0 && (
+                        <div className="max-w-4xl mx-auto" dir="ltr">
+                            <div className="flex items-center gap-2 mb-4">
+                                <span className="text-xl">📜</span>
+                                <h3 className="font-serif text-xl text-garden-dark border-b-2 border-gold-accent pb-1 pr-4 inline-block">Historical Travelogues</h3>
+                            </div>
+                            <div className="grid grid-cols-1 gap-4">
+                                {travelogueResults.map(chunk => (
+                                    <div key={chunk.id} className="bg-[#fdfbf7] border border-[#e8dfc4] p-5 rounded-sm shadow-sm relative overflow-hidden group">
+                                        {/* Decorative Corner */}
+                                        <div className="absolute top-0 right-0 w-8 h-8 bg-gradient-to-bl from-[#e8dfc4] to-transparent"></div>
+                                        
+                                        <p className="font-serif text-lg leading-relaxed text-gray-800 italic mb-3">
+                                            "{chunk.excerpt}"
+                                        </p>
+                                        <div className="flex flex-wrap items-center justify-between text-sm text-gray-600 font-sans border-t border-[#e8dfc4] pt-3 mt-2">
+                                            <div>
+                                                <span className="font-bold text-clay-accent">{chunk.bookTitle}</span>
+                                                <span className="mx-2 text-gray-400">•</span>
+                                                <span>{chunk.author} ({chunk.year})</span>
+                                            </div>
+                                            <button 
+                                                onClick={() => setSelectedTravelogue(chunk)}
+                                                className="mt-2 sm:mt-0 text-garden-dark font-medium hover:underline flex items-center gap-1"
+                                            >
+                                                <BookIcon /> Read More
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Empty State */}
-                    {paperResults.length === 0 && artResults.length === 0 && !isSearching && (
-                        <div className="flex flex-col items-center justify-center h-2/3 text-gray-400">
+                    {paperResults.length === 0 && artResults.length === 0 && travelogueResults.length === 0 && !isSearching && (
+                        <div className="flex flex-col items-center justify-center h-48 text-gray-400">
                             <div className="text-4xl md:text-6xl mb-4 opacity-20">🏛️</div>
                             <p className="text-lg md:text-xl font-nastaliq text-gray-500 mb-2">برای دسترسی به نمایه دانشگاهی، جستجو کنید</p>
-                            <p className="text-xs md:text-sm text-gray-400 border-t border-gray-300 pt-4 mt-2 px-8 text-center">
-                                منابع: SID، نورمگز، گنجور، موزه متروپولیتن (The Met) و منابع بین‌المللی
-                            </p>
                         </div>
                     )}
 
@@ -542,11 +582,6 @@ const App: React.FC = () => {
                     {/* Art Gallery Grid */}
                     {searchTab === 'art' && (
                         <div className="columns-1 sm:columns-2 md:columns-3 gap-6 max-w-6xl mx-auto space-y-6 pb-20 md:pb-0" dir="ltr">
-                             {artResults.length === 0 && !isSearching && (
-                                <div className="col-span-full text-center text-gray-500 py-10 font-persian" dir="rtl">
-                                    <p>تصویری یافت نشد. لطفاً از کلمات کلیدی انگلیسی یا نام‌های خاص استفاده کنید.</p>
-                                </div>
-                             )}
                              {artResults.map(art => (
                                  <div key={art.id} className="break-inside-avoid bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow border border-gray-100 group">
                                      <div className="relative overflow-hidden">
@@ -561,12 +596,12 @@ const App: React.FC = () => {
                                                 onClick={() => openExternalLink(art.highResUrl)}
                                                 className="text-white text-xs bg-white/20 backdrop-blur px-3 py-1 rounded-full hover:bg-white/40 transition"
                                              >
-                                                مشاهده کیفیت اصلی ↗
+                                                View Original ↗
                                              </button>
                                              <button 
                                                 onClick={() => handleQuickAddArt(art)}
                                                 className="bg-clay-accent text-white p-2 rounded-full hover:bg-orange-600 shadow-lg transform hover:scale-110 transition"
-                                                title="ذخیره در کتابخانه"
+                                                title="Save to Library"
                                              >
                                                 <PlusIcon />
                                              </button>
@@ -893,6 +928,34 @@ const App: React.FC = () => {
             onSave={handleSaveDbRecord}
             initialData={paperToEdit}
         />
+
+        {/* Travelogue Reading Modal */}
+        {selectedTravelogue && (
+            <div className="fixed inset-0 bg-garden-dark/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm" dir="ltr">
+                <div className="bg-[#fdfbf7] w-full max-w-2xl rounded shadow-2xl overflow-hidden flex flex-col max-h-[85vh] border border-[#e8dfc4]">
+                    <div className="bg-[#f3e9cf] p-4 border-b border-[#e8dfc4] flex justify-between items-center">
+                        <h3 className="font-serif font-bold text-lg text-garden-dark italic">{selectedTravelogue.bookTitle}</h3>
+                        <button onClick={() => setSelectedTravelogue(null)} className="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+                    </div>
+                    <div className="p-8 overflow-y-auto font-serif text-lg leading-loose text-gray-800">
+                        <p className="first-letter:text-4xl first-letter:font-bold first-letter:float-left first-letter:mr-2 first-letter:mt-[-5px]">
+                            {selectedTravelogue.text}
+                        </p>
+                        <div className="mt-8 pt-4 border-t border-gray-300 text-sm font-sans text-gray-500 flex justify-between items-center">
+                            <span>Author: {selectedTravelogue.author}, {selectedTravelogue.year}</span>
+                            <a 
+                                href={selectedTravelogue.sourceUrl} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="text-tile-blue hover:underline flex items-center gap-1"
+                            >
+                                Read Full Book ↗
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
 
       </main>
     </div>

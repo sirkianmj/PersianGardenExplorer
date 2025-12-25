@@ -1,3 +1,4 @@
+
 // Hybrid Storage Service: Web (IndexedDB) + Desktop (Tauri FS)
 import { Paper } from '../types';
 
@@ -209,7 +210,8 @@ export const getPdfDisplayUrl = async (id: string): Promise<string | null> => {
             const fs = window.__TAURI__!.fs;
             if (await fs.exists(filePath)) {
                 // Use Tauri's utility to create a safe asset URL
-                return window.__TAURI__!.convertFileSrc(filePath);
+                // Updated to use the correct 'tauri' namespace for convertFileSrc
+                return window.__TAURI__!.tauri.convertFileSrc(filePath);
             }
             return null;
         } catch (e) {

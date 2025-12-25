@@ -84,6 +84,18 @@ export interface ArtWork {
   medium: string;
 }
 
+export interface TravelogueChunk {
+  id: string;
+  bookTitle: string;
+  author: string;
+  year: string;
+  text: string;
+  excerpt: string; // Short version for preview
+  location: string;
+  sourceUrl: string;
+  confidence: number;
+}
+
 export interface SearchFilters {
   query: string;
   period: HistoricalPeriod;
@@ -107,7 +119,9 @@ export interface AppSettings {
 declare global {
   interface Window {
     __TAURI__?: {
-      convertFileSrc: (filePath: string, protocol?: string) => string;
+      tauri: {
+        convertFileSrc: (filePath: string, protocol?: string) => string;
+      };
       fs: {
         writeBinaryFile: (path: string, data: Uint8Array, options?: any) => Promise<void>;
         readBinaryFile: (path: string) => Promise<Uint8Array>;
