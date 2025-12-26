@@ -1,3 +1,4 @@
+// Developed by Kian Mansouri Jamshidi
 import { Paper } from '../types';
 
 /**

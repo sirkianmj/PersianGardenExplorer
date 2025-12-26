@@ -1,3 +1,4 @@
+// Developed by Kian Mansouri Jamshidi
 import { TravelogueChunk } from '../types';
 
 // --- GAZETTEER: Place Name Normalization ---

@@ -1,3 +1,4 @@
+// Developed by Kian Mansouri Jamshidi
 import * as pdfjsLib from 'pdfjs-dist';
 import FlexSearch from 'flexsearch';
 import { saveFullText, getAllFullTexts, getAllPapers } from './storageService';

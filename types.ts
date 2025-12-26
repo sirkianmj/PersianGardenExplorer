@@ -1,7 +1,4 @@
-
-
-
-
+// Developed by Kian Mansouri Jamshidi
 export enum View {
   SEARCH = 'SEARCH',
   LIBRARY = 'LIBRARY',

@@ -1,3 +1,4 @@
+// Developed by Kian Mansouri Jamshidi
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Paper } from '../types';

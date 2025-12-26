@@ -1,3 +1,4 @@
+// Developed by Kian Mansouri Jamshidi
 import { Paper, HistoricalPeriod, ResearchTopic, ArtWork } from '../types';
 
 // --- Configuration ---

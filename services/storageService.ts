@@ -1,5 +1,4 @@
-
-
+// Developed by Kian Mansouri Jamshidi
 // Hybrid Storage Service: Web (IndexedDB) + Desktop (Tauri FS)
 import { Paper } from '../types';
 
