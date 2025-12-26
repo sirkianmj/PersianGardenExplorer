@@ -6,7 +6,9 @@ import { getPdfDisplayUrl, openExternalLink } from '../services/storageService';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Initialize PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@4.0.379/build/pdf.worker.mjs';
+// CRITICAL: Using unpkg to match the raw node_modules version used by Vite bundle. 
+// esm.sh can introduce subtle incompatibilities with the raw library.
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
 
 const CORS_PROXY = 'https://corsproxy.io/?';
 
@@ -60,10 +62,13 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
         // If local, use the storage service to get the correct URL format
         // Web: blob:..., Tauri: asset://...
         if (paper.isLocal) {
+          console.log(`Attempting to load local file: ${paper.id}`);
           const localUrl = await getPdfDisplayUrl(paper.id);
           if (localUrl) {
             url = localUrl;
+            console.log("Local Blob URL generated successfully.");
           } else {
+            console.error("Failed to generate local URL for ID:", paper.id);
             throw new Error("Local file not found in database.");
           }
         }
@@ -87,11 +92,16 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
             setNumPages(doc.numPages);
             setIsLoading(false);
         } catch (directError: any) {
-            if (paper.isLocal) throw directError;
-            console.warn("Direct load failed. Attempting proxy...", directError);
+            console.warn("Direct load failed.", directError);
 
-            // Attempt 2: Load via CORS Proxy
+            if (paper.isLocal) {
+                 // If local file failed, it's likely a format issue or corrupt blob, not CORS
+                 throw new Error("Failed to load local PDF file.");
+            }
+
+            // Attempt 2: Load via CORS Proxy (Only for remote URLs)
             try {
+                console.log("Attempting proxy load...");
                 const proxyUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
                 const proxyTask = pdfjsLib.getDocument({ ...baseParams, url: proxyUrl });
                 const doc = await proxyTask.promise;
