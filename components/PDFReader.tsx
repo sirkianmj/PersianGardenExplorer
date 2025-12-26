@@ -1,12 +1,12 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Paper, Note } from '../types';
 import { getPdfData, openExternalLink } from '../services/storageService';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Initialize PDF.js worker
-// CRITICAL: Using unpkg to match the raw node_modules version used by Vite bundle. 
-// esm.sh can introduce subtle incompatibilities with the raw library.
+// CRITICAL FIX: Load worker via CDN matching package.json version (4.0.379)
+// This avoids complex bundling issues and "Invalid URL" errors with 'import.meta.url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
 
 const CORS_PROXY = 'https://corsproxy.io/?';
@@ -56,8 +56,11 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
       setPdfDoc(null);
 
       try {
-        // Configuration for PDF.js
+        // Configuration for PDF.js - No CDN cMap needed if we have text issues we can add it later
+        // But bundling cmaps is heavy, so we keep using standard params or CDN for cmaps only if strictly needed.
+        // For viewing, usually optional.
         const baseParams = {
+             // We can point to a CDN for CMaps if text selection is buggy, but for rendering it's optional
             cMapUrl: 'https://unpkg.com/pdfjs-dist@4.0.379/cmaps/',
             cMapPacked: true,
         };
