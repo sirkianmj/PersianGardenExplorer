@@ -7,7 +7,7 @@ interface Province {
   path: string;
 }
 
-// Simplified Paths for major provinces (Optimized for Web/Tauri performance)
+// Simplified Paths for major provinces
 const PROVINCES: Province[] = [
   { id: 'AZ-E', nameFa: 'آذربایجان شرقی', nameEn: 'East Azerbaijan', path: 'M168.5,58.3 L180.2,45.1 L205.6,52.8 L215.1,75.2 L195.4,85.6 L175.2,78.1 Z' },
   { id: 'AZ-W', nameFa: 'آذربایجان غربی', nameEn: 'West Azerbaijan', path: 'M145.2,35.5 L168.5,58.3 L175.2,78.1 L165.1,105.2 L140.5,95.6 L135.2,65.1 Z' },
@@ -50,53 +50,48 @@ const IranMap: React.FC<IranMapProps> = ({ onProvinceSelect }) => {
   const [hoveredProvince, setHoveredProvince] = useState<Province | null>(null);
 
   const handleProvinceClick = (province: Province) => {
-    // POWERFUL SEARCH ALGORITHM:
-    // We construct a specific "Composite Query" consisting of:
-    // 1. Persian Keywords: "باغ" (Garden) + Province Name (e.g., "باغ های شیراز")
-    // 2. English Keywords: Province Name + "Garden Architecture"
-    // 
-    // The Gemini Service will strictly separate these to prevent "OR" boolean leaks.
-    // Example: "باغ های تاریخی زنجان Zanjan Historical Gardens"
     const query = `باغ های تاریخی ${province.nameFa} ${province.nameEn} Historical Gardens`;
     onProvinceSelect(query);
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full p-6 relative bg-gradient-to-br from-paper-bg to-white overflow-hidden">
+    <div className="w-full h-full p-4 relative overflow-hidden flex flex-col items-center justify-center">
       
-      {/* Background Decorative Elements */}
-      <div className="absolute top-0 right-0 w-64 h-64 bg-tile-blue opacity-5 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-0 left-0 w-80 h-80 bg-clay-accent opacity-5 rounded-full blur-3xl pointer-events-none"></div>
-
-      <div className="z-10 text-center mb-8">
-        <h2 className="text-3xl md:text-4xl font-nastaliq text-garden-dark mb-2">اطلس باغ‌های ایرانی</h2>
-        <p className="text-gray-500 font-sans text-sm md:text-base">
-          برای جستجوی هوشمند مقالات، استان مورد نظر را روی نقشه انتخاب کنید
-        </p>
-      </div>
-
-      <div className="relative w-full max-w-4xl aspect-[1.4/1] bg-white/50 backdrop-blur-sm rounded-2xl border border-white shadow-xl p-4 flex items-center justify-center">
+      {/* Container - Glass Card Style */}
+      <div className="glass-panel w-full h-full max-w-5xl relative p-8 flex flex-col md:flex-row items-center justify-center gap-8">
         
-        {/* Hover Info Card */}
+        {/* Background Grid */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none rounded-2xl"></div>
+
+        {/* Text Area */}
+        <div className="absolute top-6 left-6 z-10 text-right">
+            <h2 className="text-3xl font-nastaliq text-gold-primary mb-2 drop-shadow-md">اطلس جغرافیایی</h2>
+            <p className="text-sm text-text-muted">تحلیل مکانی باغ‌های تاریخی</p>
+        </div>
+
+        {/* Info Box */}
         <div className={`
-            absolute top-6 right-6 z-20 bg-white/90 backdrop-blur border border-tile-blue/30 rounded-lg p-4 shadow-lg transition-all duration-300 transform pointer-events-none
-            ${hoveredProvince ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}
+            absolute bottom-6 right-6 z-20 glass-panel p-4 border border-teal-glow/30 min-w-[200px]
+            transition-all duration-300 transform
+            ${hoveredProvince ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}
         `}>
-             <h3 className="font-bold text-lg text-garden-dark border-b border-gray-200 pb-1 mb-1">
+             <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/10">
+                <span className="w-2 h-2 rounded-full bg-teal-glow shadow-glow-teal animate-pulse"></span>
+                <span className="text-xs text-teal-glow font-bold">منطقه انتخاب شده</span>
+             </div>
+             <h3 className="font-bold text-xl text-text-primary mb-1">
                 {hoveredProvince?.nameFa}
              </h3>
-             <p className="text-xs text-gray-500 font-sans font-medium uppercase tracking-wide">
+             <p className="text-xs text-text-muted font-sans">
                 {hoveredProvince?.nameEn}
-             </p>
-             <p className="text-[10px] text-tile-blue mt-2 flex items-center gap-1">
-                <span>🔍</span> کلیک برای جستجوی تخصصی
              </p>
         </div>
 
-        {/* SVG Map */}
+        {/* Map SVG */}
         <svg 
             viewBox="100 0 350 360" 
-            className="w-full h-full drop-shadow-lg"
+            className="w-full max-h-[80vh] drop-shadow-2xl"
+            style={{ filter: 'drop-shadow(0 0 20px rgba(45, 212, 191, 0.1))' }}
             xmlns="http://www.w3.org/2000/svg"
         >
           {PROVINCES.map((province) => (
@@ -104,28 +99,20 @@ const IranMap: React.FC<IranMapProps> = ({ onProvinceSelect }) => {
                onClick={() => handleProvinceClick(province)}
                onMouseEnter={() => setHoveredProvince(province)}
                onMouseLeave={() => setHoveredProvince(null)}
-               className="cursor-pointer transition-all duration-300 group"
+               className="cursor-pointer transition-all duration-500 group"
             >
               <path
                 d={province.path}
-                className="fill-garden-light stroke-white stroke-[1.5] transition-all duration-300 ease-out 
-                           group-hover:fill-tile-blue group-hover:stroke-garden-dark group-hover:stroke-[2] 
-                           group-active:fill-tile-dark"
+                className="fill-mystic-deep/50 stroke-white/20 stroke-[0.5] transition-all duration-300
+                           group-hover:fill-teal-glow/10 group-hover:stroke-gold-primary group-hover:stroke-[1.5]"
               />
             </g>
           ))}
           
-          {/* Persian Gulf Label */}
-          <text x="250" y="340" className="fill-tile-blue/40 text-sm font-nastaliq pointer-events-none">خلیج فارس</text>
-          
-          {/* Caspian Sea Label */}
-          <text x="250" y="40" className="fill-tile-blue/40 text-sm font-nastaliq pointer-events-none">دریای خزر</text>
+          <text x="250" y="340" className="fill-white/10 text-xs font-nastaliq pointer-events-none">خلیج فارس</text>
+          <text x="250" y="40" className="fill-white/10 text-xs font-nastaliq pointer-events-none">دریای خزر</text>
         </svg>
 
-      </div>
-
-      <div className="mt-8 text-center text-xs text-gray-400 font-sans">
-        نقشه شماتیک تقسیمات استانی ایران | طراحی اختصاصی برای سامانه پردیس
       </div>
     </div>
   );

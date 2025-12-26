@@ -1,24 +1,23 @@
-
-
-// Developed by Kian Mansouri Jamshidi
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import PDFReader from './components/PDFReader';
 import DatabaseModal from './components/DatabaseModal';
+import CitationModal from './components/CitationModal';
 import IranMap from './components/IranMap';
 import { View, Paper, HistoricalPeriod, ResearchTopic, SearchFilters, AppSettings, ArtWork, TravelogueChunk } from './types';
 import { searchAcademicPapers, searchPersianArt } from './services/geminiService';
 import { searchTravelogues } from './services/travelogueService';
-import { deletePaperRecord, getAllPapers, savePaperMetadata, exportDatabase, importDatabase, openExternalLink } from './services/storageService';
+import { deletePaperRecord, getAllPapers, savePaperMetadata, exportDatabase, importDatabase, openExternalLink, saveFile } from './services/storageService';
+import { processAndIndexPaper, searchFullText } from './services/pdfProcessor';
 
-// --- Persian Dictionaries ---
+// --- CONSTANTS ---
 const PERIOD_LABELS: Record<HistoricalPeriod, string> = {
   [HistoricalPeriod.ALL]: 'همه دوره‌ها',
-  [HistoricalPeriod.ELAMITE_MEDES]: 'ایلامیان و مادها (پیش از تاریخ)',
+  [HistoricalPeriod.ELAMITE_MEDES]: 'ایلامیان و مادها',
   [HistoricalPeriod.ACHAEMENID]: 'هخامنشیان',
   [HistoricalPeriod.SELEUCID_PARTHIAN]: 'سلوکیان و اشکانیان',
   [HistoricalPeriod.SASSANID]: 'ساسانیان',
-  [HistoricalPeriod.EARLY_ISLAMIC]: 'سده‌های اولیه اسلامی (طاهریان تا آل‌بویه)',
+  [HistoricalPeriod.EARLY_ISLAMIC]: 'سده‌های اولیه اسلامی',
   [HistoricalPeriod.SELJUK_GHAZNAVID]: 'سلجوقیان و غزنویان',
   [HistoricalPeriod.ILKHANID]: 'ایلخانیان',
   [HistoricalPeriod.TIMURID]: 'تیموریان',
@@ -26,362 +25,252 @@ const PERIOD_LABELS: Record<HistoricalPeriod, string> = {
   [HistoricalPeriod.AFSHARID_ZAND]: 'افشاریه و زندیه',
   [HistoricalPeriod.QAJAR]: 'قاجار',
   [HistoricalPeriod.PAHLAVI]: 'پهلوی',
-  [HistoricalPeriod.CONTEMPORARY]: 'معاصر (جمهوری اسلامی)'
+  [HistoricalPeriod.CONTEMPORARY]: 'معاصر'
 };
 
 const TOPIC_LABELS: Record<ResearchTopic, string> = {
   [ResearchTopic.GENERAL]: 'تاریخ عمومی',
   [ResearchTopic.GARDEN_LAYOUT]: 'هندسه و الگوی باغ',
-  [ResearchTopic.QANAT_WATER]: 'قنات و سیستم‌های آبیاری',
-  [ResearchTopic.VEGETATION]: 'پوشش گیاهی و درختان',
-  [ResearchTopic.SYMBOLISM]: 'نمادشناسی و فلسفه',
-  [ResearchTopic.PAVILIONS]: 'کوشک‌ها و ابنیه',
+  [ResearchTopic.QANAT_WATER]: 'قنات و آب',
+  [ResearchTopic.VEGETATION]: 'پوشش گیاهی',
+  [ResearchTopic.SYMBOLISM]: 'نمادشناسی',
+  [ResearchTopic.PAVILIONS]: 'کوشک‌ها',
   [ResearchTopic.CONSERVATION]: 'مرمت و حفاظت'
 };
 
 const SOURCE_LABELS: Record<string, string> = {
-    'Semantic Scholar': 'سمانتیک اسکالر',
-    'CrossRef': 'کراس‌رف',
-    'SID': 'پایگاه SID',
-    'NoorMags': 'نورمگز',
-    'Ganjoor': 'گنجور',
-    'IranArchpedia': 'دانشنامه معماری',
-    'Local': 'محلی'
+    'Semantic Scholar': 'SEMANTIC',
+    'CrossRef': 'CROSSREF',
+    'SID': 'SID',
+    'NoorMags': 'NOORMAGS',
+    'Ganjoor': 'GANJOOR',
+    'IranArchpedia': 'ARCHPEDIA',
+    'Local': 'LOCAL'
 };
 
-// --- Icons ---
-const PlusIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-);
-const SearchIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-);
-const StarIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-);
-const ExternalLinkIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-);
-const EditIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-);
-const MenuIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-);
-const GridIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-);
-const ListIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-);
-const GalleryIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-);
-const PaperIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-);
-const BookIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-);
+// --- LOADING TRIVIA DATABASE ---
+const LOADING_FACTS = [
+    {
+        title: "ریشه واژه پردیس",
+        text: "آیا می‌دانستید واژه انگلیسی Paradise از واژه اوستایی «پایری‌دئزه» (Pairi-daēza) گرفته شده است؟ این واژه به معنای «باغ محصور» یا فضای دیوارکشی شده است که بعدها به معنای بهشت در زبان‌های اروپایی وارد شد."
+    },
+    {
+        title: "کهن‌ترین چهارباغ",
+        text: "باغ پاسارگاد (ساخته شده به دستور کوروش کبیر) نخستین نمونه شناخته شده از الگوی «چهارباغ» است. هندسه این باغ بر اساس تقسیم آب و کرت‌بندی‌های منظم شکل گرفته که نمادی از چهار عنصر حیات است."
+    },
+    {
+        title: "معماری کوشک",
+        text: "کوشک‌ها معمولاً در تقاطع محورهای اصلی باغ قرار می‌گیرند تا بیشترین دید منظر را داشته باشند. در باغ فین کاشان، کوشک صفوی در مرکز قرار دارد اما کوشک قاجاری در انتهای محور اصلی بنا شده است."
+    },
+    {
+        title: "سیستم آبیاری هوشمند",
+        text: "ایرانیان باستان با ابداع قنات و استفاده از تنبوشه‌های سفالی، آب را از کیلومترها دورتر بدون تبخیر به دل کویر می‌رساندند. صدای آب در باغ ایرانی نه تنها برای خنکی، بلکه برای آرامش صوتی (Soundscape) طراحی شده است."
+    },
+    {
+        title: "درختان مقدس",
+        text: "در باغ ایرانی، سرو نماد جاودانگی و ایستادگی (به دلیل خزان نکردن) و چنار نماد سایه‌گستری و شکوه است. کاشت متناوب این دو درخت در خیابان‌های چهارباغ اصفهان الگویی کلاسیک ایجاد کرده بود."
+    },
+    {
+        title: "باغ تخت شیراز",
+        text: "باغ تخت یا «باغ قراچه» نمونه‌ای منحصر به فرد از باغ‌های مطبق (تراس‌بندی شده) در شمال شیراز بود که با الهام از معماری زیگورات‌ها ساخته شد و متاسفانه امروزه تنها ویرانه‌هایی از آن باقی مانده است."
+    }
+];
 
 const App: React.FC = () => {
-  // --- State ---
+  // --- STATE ---
   const [currentView, setCurrentView] = useState<View>(View.SEARCH);
   const [library, setLibrary] = useState<Paper[]>([]);
   const [librarySearchQuery, setLibrarySearchQuery] = useState('');
+  const [displayedLibrary, setDisplayedLibrary] = useState<Paper[]>([]);
+  const [isLocalSearching, setIsLocalSearching] = useState(false);
   const [currentPaper, setCurrentPaper] = useState<Paper | null>(null);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
+  const [citationPaper, setCitationPaper] = useState<Paper | null>(null);
   const [paperToEdit, setPaperToEdit] = useState<Paper | null>(null);
   const [loadingLib, setLoadingLib] = useState(true);
-  
-  // App Settings
-  const [settings, setSettings] = useState<AppSettings>({
-    sidebarMode: 'expanded',
-    libraryView: 'grid',
-    theme: 'light'
-  });
-
-  const [filters, setFilters] = useState<SearchFilters>({
-    query: '',
-    period: HistoricalPeriod.ALL,
-    topic: ResearchTopic.GENERAL,
-    useGrounding: true
-  });
-  
-  // Search State
+  const [settings, setSettings] = useState<AppSettings>({ sidebarMode: 'expanded', libraryView: 'grid', theme: 'dark' });
+  const [filters, setFilters] = useState<SearchFilters>({ query: '', period: HistoricalPeriod.ALL, topic: ResearchTopic.GENERAL, useGrounding: true });
   const [searchTab, setSearchTab] = useState<'papers' | 'art'>('papers');
   const [paperResults, setPaperResults] = useState<Partial<Paper>[]>([]);
   const [artResults, setArtResults] = useState<ArtWork[]>([]);
   const [travelogueResults, setTravelogueResults] = useState<TravelogueChunk[]>([]);
-  const [selectedTravelogue, setSelectedTravelogue] = useState<TravelogueChunk | null>(null); // For Modal
   const [isSearching, setIsSearching] = useState(false);
-  
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('آماده‌به‌کار');
   
-  // Initialize and Load Data
+  // Loading Facts State
+  const [currentFactIndex, setCurrentFactIndex] = useState(0);
+
+  // --- EFFECTS ---
   useEffect(() => {
     const loadData = async () => {
         setLoadingLib(true);
         try {
-            // Load Settings
             const savedSettings = localStorage.getItem('pardis_settings');
-            if (savedSettings) {
-                setSettings(JSON.parse(savedSettings));
-            }
-
-            // Load Library from IndexedDB
+            if (savedSettings) setSettings(JSON.parse(savedSettings));
             const storedPapers = await getAllPapers();
             setLibrary(storedPapers);
-        } catch (e) {
-            console.error("Failed to load library:", e);
-        } finally {
-            setLoadingLib(false);
-        }
+        } catch (e) { console.error(e); } finally { setLoadingLib(false); }
     };
     loadData();
   }, []);
 
+  useEffect(() => { localStorage.setItem('pardis_settings', JSON.stringify(settings)); }, [settings]);
+
+  // Trivia Rotation Timer
   useEffect(() => {
-    localStorage.setItem('pardis_settings', JSON.stringify(settings));
-  }, [settings]);
+    let interval: any;
+    if (isSearching) {
+        interval = setInterval(() => {
+            setCurrentFactIndex(prev => (prev + 1) % LOADING_FACTS.length);
+        }, 5000); // Change fact every 5 seconds
+    }
+    return () => clearInterval(interval);
+  }, [isSearching]);
 
-  // Derived State: Filtered Library
-  const filteredLibrary = library.filter(paper => {
-      if (!librarySearchQuery.trim()) return true;
-      const q = librarySearchQuery.toLowerCase().trim();
-      return (
-          paper.title?.toLowerCase().includes(q) ||
-          paper.authors?.some(a => a.toLowerCase().includes(q)) ||
-          paper.year?.includes(q) ||
-          paper.abstract?.toLowerCase().includes(q) ||
-          paper.source?.toLowerCase().includes(q) ||
-          paper.tags?.some(t => t.toLowerCase().includes(q))
-      );
-  });
+  useEffect(() => {
+    const performLocalSearch = async () => {
+        if (!librarySearchQuery.trim()) { setDisplayedLibrary(library); return; }
+        setIsLocalSearching(true);
+        try {
+            const fullTextIds = await searchFullText(librarySearchQuery);
+            const q = librarySearchQuery.toLowerCase().trim();
+            const metaMatches = library.filter(p => p.title.toLowerCase().includes(q) || p.authors.some(a => a.toLowerCase().includes(q)));
+            const merged = [...metaMatches];
+            const metaIds = new Set(metaMatches.map(p => p.id));
+            fullTextIds.forEach(id => { if(!metaIds.has(id)) { const p = library.find(x => x.id === id); if(p) merged.push(p); } });
+            setDisplayedLibrary(merged);
+        } catch { } finally { setIsLocalSearching(false); }
+    };
+    const t = setTimeout(performLocalSearch, 300);
+    return () => clearTimeout(t);
+  }, [librarySearchQuery, library]);
 
-  // Settings Handlers
-  const toggleSidebarMode = () => {
-      setSettings(prev => ({
-          ...prev,
-          sidebarMode: prev.sidebarMode === 'expanded' ? 'compact' : 'expanded'
-      }));
-  };
-
-  const setLibraryView = (view: 'grid' | 'list') => {
-      setSettings(prev => ({ ...prev, libraryView: view }));
-  };
-
-  // Reusable Search Execution Logic
+  // --- HANDLERS ---
+  const toggleSidebarMode = () => setSettings(prev => ({...prev, sidebarMode: prev.sidebarMode === 'expanded' ? 'compact' : 'expanded'}));
+  const setLibraryView = (view: 'grid' | 'list') => setSettings(prev => ({ ...prev, libraryView: view }));
+  
   const executeSearch = async (query: string, period: HistoricalPeriod, topic: ResearchTopic) => {
     if (!query.trim()) return;
     setIsSearching(true);
-    setPaperResults([]);
-    setArtResults([]);
-    setTravelogueResults([]);
-    
+    setStatusMessage('در حال پردازش...');
+    setPaperResults([]); setArtResults([]); setTravelogueResults([]);
     try {
-        // Parallel execution of Academic search, Art search, and Travelogue search
-        const [pResults, aResults, tResults] = await Promise.all([
-             searchAcademicPapers(query, period, topic),
-             searchPersianArt(query),
-             searchTravelogues(query)
-        ]);
-        
-        setPaperResults(pResults);
-        setArtResults(aResults);
-        setTravelogueResults(tResults);
-
-        // Auto-switch tab logic
-        if (pResults.length === 0 && aResults.length > 0) {
-            setSearchTab('art');
-        } else if (pResults.length > 0) {
-            setSearchTab('papers');
-        }
-
-    } catch (error) {
-        alert("جستجو با خطا مواجه شد. لطفاً اتصال اینترنت خود را بررسی کنید.");
-    } finally {
-        setIsSearching(false);
-    }
+        const [p, a, t] = await Promise.all([searchAcademicPapers(query, period, topic), searchPersianArt(query), searchTravelogues(query)]);
+        setPaperResults(p); setArtResults(a); setTravelogueResults(t);
+        if (p.length === 0 && a.length > 0) setSearchTab('art');
+        setStatusMessage(`یافت شد: ${p.length + a.length + t.length} سند`);
+    } catch { setStatusMessage('خطا در اتصال'); } 
+    finally { setIsSearching(false); }
   };
 
-  const handleSearchSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    executeSearch(filters.query, filters.period, filters.topic);
-  };
-
-  // Handler for Map Clicks
-  const handleMapSearch = (smartQuery: string) => {
-    setFilters(prev => ({ ...prev, query: smartQuery }));
-    setCurrentView(View.SEARCH);
-    executeSearch(smartQuery, filters.period, filters.topic);
-  };
-
-  const handleQuickAdd = async (paper: Partial<Paper>) => {
-      const newPaper: Paper = {
-          ...paper,
-          id: paper.id || crypto.randomUUID(),
-          title: paper.title || 'بدون عنوان',
-          authors: paper.authors || [],
-          year: paper.year || 'نامشخص',
-          source: paper.source || 'نامشخص',
-          abstract: paper.abstract || '',
-          tags: [filters.topic !== ResearchTopic.GENERAL ? filters.topic : 'General'],
-          notes: [],
-          addedAt: Date.now(),
-          isLocal: false,
-          language: paper.language || 'fa',
-          apiSource: paper.apiSource,
-          citationCount: paper.citationCount,
-          docType: 'paper'
+  const handleSearchSubmit = (e: React.FormEvent) => { e.preventDefault(); executeSearch(filters.query, filters.period, filters.topic); };
+  const handleMapSearch = (q: string) => { setFilters(prev => ({...prev, query: q})); setCurrentView(View.SEARCH); executeSearch(q, filters.period, filters.topic); };
+  
+  // --- INTELLIGENT HARVESTING SYSTEM ---
+  const handleQuickAdd = async (p: Partial<Paper>) => {
+      setStatusMessage('در حال استخراج اطلاعات...');
+      const newId = p.id || crypto.randomUUID();
+      
+      // Default structure
+      let newPaper: Paper = { 
+          ...p, 
+          id: newId, 
+          title: p.title || 'بدون عنوان', 
+          authors: p.authors || [], 
+          year: p.year || 'نامشخص', 
+          source: p.source || 'نامشخص', 
+          abstract: p.abstract || '', 
+          tags: [], 
+          notes: [], 
+          addedAt: Date.now(), 
+          isLocal: false, 
+          language: p.language || 'fa', 
+          apiSource: p.apiSource, 
+          citationCount: p.citationCount, 
+          docType: 'paper',
+          // Ensure URL is preserved
+          url: p.url
       };
 
-      // Persist immediately
-      await savePaperMetadata(newPaper);
-      setLibrary(prev => [newPaper, ...prev]);
-  };
-
-  const handleQuickAddArt = async (art: ArtWork) => {
-      const newPaper: Paper = {
-          id: `art-${art.id}`,
-          title: art.title,
-          authors: [art.artist],
-          year: art.date || 'نامشخص',
-          source: art.department || 'Visual Archive',
-          abstract: `${art.medium} • ${art.period} • ${art.department}`,
-          url: art.museumUrl, // External Link to Museum
-          thumbnailUrl: art.highResUrl || art.imageUrl, // Full Quality Link
-          docType: 'artwork', // Distinguish from papers
-          tags: ['Visual Art', art.period],
-          notes: [],
-          addedAt: Date.now(),
-          isLocal: false,
-          language: 'en',
-          apiSource: 'Local' // Treated as local entry but remote image
-      };
-      
-      await savePaperMetadata(newPaper);
-      setLibrary(prev => [newPaper, ...prev]);
-      alert('تصویر به کتابخانه اضافه شد.');
-  };
-
-  const handleSaveDbRecord = async (paper: Paper) => {
-    // Persist to DB
-    await savePaperMetadata(paper);
-    
-    // Update State
-    setLibrary(prev => {
-      const exists = prev.findIndex(p => p.id === paper.id);
-      if (exists !== -1) {
-        const updated = [...prev];
-        updated[exists] = paper;
-        return updated;
+      // 1. Attempt to Harvest PDF if URL exists
+      if (p.url) {
+          try {
+              setStatusMessage('تلاش برای دانلود خودکار سند...');
+              
+              // Use CORS Proxy to bypass restrictions
+              const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(p.url);
+              
+              // Head request or GET to check content type
+              const response = await fetch(proxyUrl);
+              const contentType = response.headers.get('content-type');
+              
+              // If it looks like a PDF
+              if (response.ok && (contentType?.includes('application/pdf') || p.url.endsWith('.pdf'))) {
+                  const blob = await response.blob();
+                  const file = new File([blob], `${newPaper.title}.pdf`, { type: 'application/pdf' });
+                  
+                  // Save to Local DB
+                  await saveFile(newId, file);
+                  
+                  // Index Full Text
+                  setStatusMessage('نمایه‌سازی متن...');
+                  await processAndIndexPaper(newId, newPaper.title, newPaper.authors, file);
+                  
+                  newPaper.isLocal = true;
+                  setStatusMessage('سند دانلود و ذخیره شد');
+              } else {
+                  setStatusMessage('فایل PDF مستقیم یافت نشد. لینک ذخیره شد.');
+              }
+          } catch (e) {
+              console.warn("Harvesting failed:", e);
+              setStatusMessage('دانلود ناموفق بود. لینک منبع ذخیره شد.');
+          }
+      } else {
+          setStatusMessage('ذخیره متادیتا (بدون لینک دانلود)...');
       }
-      return [paper, ...prev];
-    });
+
+      await savePaperMetadata(newPaper); 
+      setLibrary(prev => [newPaper, ...prev]); 
   };
 
-  const handleDeletePaper = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if(confirm('آیا از حذف این سند از کتابخانه اطمینان دارید؟')) {
-      await deletePaperRecord(id);
-      setLibrary(prev => prev.filter(p => p.id !== id));
-      if(currentPaper?.id === id) setCurrentPaper(null);
-    }
+  const handleQuickAddArt = async (a: ArtWork) => {
+      const newP: Paper = { id: `art-${a.id}`, title: a.title, authors: [a.artist], year: a.date||'N/A', source: a.department||'Gallery', abstract: `${a.medium}`, url: a.museumUrl, thumbnailUrl: a.highResUrl||a.imageUrl, docType: 'artwork', tags: ['Art'], notes: [], addedAt: Date.now(), isLocal: false, language: 'en', apiSource: 'Local' };
+      await savePaperMetadata(newP); setLibrary(prev => [newP, ...prev]); setStatusMessage('تصویر نمایه شد');
   };
 
-  const handleEditPaper = (paper: Paper, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setPaperToEdit(paper);
-    setIsDbModalOpen(true);
+  const handleDeletePaper = async (id: string, e: React.MouseEvent) => { e.stopPropagation(); if(confirm('حذف شود؟')) { await deletePaperRecord(id); setLibrary(prev => prev.filter(p => p.id !== id)); setStatusMessage('حذف شد'); } };
+  const handleSaveDbRecord = async (p: Paper) => { await savePaperMetadata(p); setLibrary(prev => { const idx = prev.findIndex(x => x.id === p.id); if(idx !== -1) { const c = [...prev]; c[idx] = p; return c;} return [p, ...prev]; }); setStatusMessage('ذخیره شد'); };
+  
+  const handleExport = async () => {
+    const data = await exportDatabase();
+    const blob = new Blob([data], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pardis-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
   };
 
-  const handleOpenReader = (paper: Paper) => {
-      setCurrentPaper(paper);
-      setCurrentView(View.READER);
-  };
-
-  const handleUpdateNote = async (paperId: string, note: any) => {
-      // Find current paper to update
-      const targetPaper = library.find(p => p.id === paperId);
-      if (!targetPaper) return;
-
-      const updatedPaper = { ...targetPaper, notes: [...targetPaper.notes, note] };
-      
-      // Persist
-      await savePaperMetadata(updatedPaper);
-
-      // Update State
-      setLibrary(prev => prev.map(p => p.id === paperId ? updatedPaper : p));
-      
-      if (currentPaper?.id === paperId) {
-          setCurrentPaper(updatedPaper);
-      }
-  };
-
-  const handleExportBackup = async () => {
-      try {
-          const json = await exportDatabase();
-          const blob = new Blob([json], {type: 'application/json'});
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `pardis-backup-${new Date().toISOString().slice(0,10)}.json`;
-          a.click();
-          URL.revokeObjectURL(url);
-      } catch (e) {
-          alert('خطا در تهیه نسخه پشتیبان');
-      }
-  };
-
-  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
       const reader = new FileReader();
-      reader.onload = async (event) => {
+      reader.onload = async (ev) => {
           try {
-              const json = event.target?.result as string;
-              if (confirm('آیا مطمئن هستید؟ این کار اطلاعات فعلی را با نسخه پشتیبان ادغام می‌کند.')) {
-                  const imported = await importDatabase(json);
-                  setLibrary(imported); // Refresh view with imported data
-                  alert('بازیابی با موفقیت انجام شد.');
-              }
-          } catch (err) {
-              alert('فایل پشتیبان نامعتبر است.');
-          }
+             const items = await importDatabase(ev.target?.result as string);
+             setLibrary(items);
+             alert('بازگردانی انجام شد');
+          } catch(err) { alert('فایل نامعتبر است'); }
       };
       reader.readAsText(file);
   };
 
-  const getBadgeColor = (source?: string) => {
-      switch(source) {
-          case 'Semantic Scholar': return 'bg-blue-50 text-blue-700 border-blue-100';
-          case 'CrossRef': return 'bg-orange-50 text-orange-700 border-orange-100';
-          case 'SID': return 'bg-purple-50 text-purple-700 border-purple-100';
-          case 'NoorMags': return 'bg-green-50 text-green-700 border-green-100';
-          case 'Ganjoor': return 'bg-red-50 text-red-700 border-red-100';
-          case 'IranArchpedia': return 'bg-yellow-50 text-yellow-700 border-yellow-100';
-          default: return 'bg-gray-50 text-gray-700 border-gray-100';
-      }
-  };
-
-  const getViewTitle = () => {
-    switch(currentView) {
-        case View.SEARCH: return 'کاوش در منابع';
-        case View.ATLAS: return 'اطلس باغ‌های ایرانی';
-        case View.LIBRARY: return 'کتابخانه من';
-        case View.READER: return 'سالن مطالعه';
-        case View.SETTINGS: return 'تنظیمات';
-        default: return 'کاوشگر باغ ایرانی';
-    }
-  };
-
+  // --- RENDER ---
   return (
-    <div className="flex h-[100dvh] bg-paper-bg font-persian relative overflow-hidden">
-      {/* Background Texture */}
-      <div className="absolute inset-0 bg-pattern-girih opacity-[0.03] pointer-events-none z-0"></div>
-
+    <div className="flex h-[100dvh] font-sans relative">
+      <div className="particle-bg z-0"></div>
+      
       <Sidebar 
         currentView={currentView} 
         onChangeView={setCurrentView}
@@ -392,572 +281,343 @@ const App: React.FC = () => {
         onToggleMode={toggleSidebarMode}
       />
 
-      <main className="flex-1 flex flex-col overflow-hidden relative z-10 w-full transition-all duration-300">
+      <main className="flex-1 flex flex-col overflow-hidden relative z-10 w-full md:pl-0">
         
-        {/* Mobile Header with Safe Area Padding */}
-        <div className="md:hidden bg-garden-dark text-white flex items-center px-4 py-3 pt-safe justify-between shrink-0 shadow-md">
-            <button onClick={() => setIsSidebarOpen(true)} className="p-1">
-                <MenuIcon />
-            </button>
-            <span className="font-nastaliq text-lg">{getViewTitle()}</span>
-            <div className="w-6" /> {/* Spacer for centering */}
-        </div>
-
-        {/* Search View */}
-        {currentView === View.SEARCH && (
-            <div className="flex flex-col h-full">
-                <div className="p-6 md:p-8 border-b border-stone-200 bg-white shadow-sm relative overflow-hidden shrink-0">
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-garden-dark via-tile-blue to-clay-accent"></div>
-                    
-                    <h2 className="text-2xl md:text-3xl font-nastaliq text-garden-dark mb-6 mt-2 drop-shadow-sm hidden md:block">
-                        کاوش علمی در منابع معماری
+        {/* Top Header - Glass Strip */}
+        {/* HIDE HEADER IF IN READER VIEW TO AVOID DOUBLE HEADER OVERLAP */}
+        {currentView !== View.READER && (
+            <div className="h-16 flex items-center justify-between px-6 shrink-0 z-20">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setIsSidebarOpen(true)} className="md:hidden text-text-primary text-xl">☰</button>
+                    <h2 className="text-xl font-nastaliq text-gold-primary drop-shadow-md pt-2">
+                        {currentView === View.SEARCH && 'کاوشگر منابع'}
+                        {currentView === View.ATLAS && 'اطلس مکانی'}
+                        {currentView === View.LIBRARY && 'آرشیو دیجیتال'}
+                        {currentView === View.TIMELINE && 'خط زمان'}
+                        {currentView === View.SETTINGS && 'تنظیمات سیستم'}
                     </h2>
-                    
-                    <form onSubmit={handleSearchSubmit} className="space-y-4 max-w-4xl mx-auto relative z-10">
-                        <div className="flex flex-col md:flex-row gap-4">
-                            <div className="flex-1 relative group">
-                                <div className="absolute top-3.5 right-4 text-gray-400 pointer-events-none group-focus-within:text-tile-blue transition-colors">
-                                   <SearchIcon />
-                                </div>
+                </div>
+                <div className="flex items-center gap-3 glass-panel px-4 py-1.5 rounded-full border border-white/5">
+                    <span className={`w-2 h-2 rounded-full ${isSearching ? 'bg-gold-primary animate-pulse' : 'bg-teal-glow'}`}></span>
+                    <span className="text-xs text-text-muted font-medium">{statusMessage}</span>
+                </div>
+            </div>
+        )}
+
+        {/* Content Area - If Reader, takes full height */}
+        <div className={`flex-1 overflow-hidden relative ${currentView !== View.READER ? 'p-4 md:p-6' : 'p-0'}`}>
+            
+            {/* VIEW: SEARCH (The Aggregator) */}
+            {currentView === View.SEARCH && (
+                <div className="h-full flex flex-col gap-6 max-w-7xl mx-auto">
+                    {/* Search Bar Container */}
+                    <div className="glass-panel p-6 shrink-0 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-teal-glow opacity-5 rounded-full blur-2xl"></div>
+                        <form onSubmit={handleSearchSubmit} className="relative z-10 flex flex-col gap-4">
+                            <div className="relative">
                                 <input 
                                     type="text" 
                                     value={filters.query}
                                     onChange={e => setFilters({...filters, query: e.target.value})}
-                                    placeholder="جستجوی موضوعی (مثلاً: باغ فین)"
-                                    className="w-full py-3 pr-12 pl-4 border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-tile-blue shadow-inner bg-gray-50 focus:bg-white transition-all duration-300 text-base md:text-sm selectable-text"
+                                    placeholder="جستجوی موضوعی (مثال: باغ فین، معماری دوره صفوی...)"
+                                    className="w-full bg-black/30 border border-white/10 rounded-xl px-5 py-4 text-text-primary placeholder-gray-600 focus:border-teal-glow/50 focus:ring-0 transition-colors text-lg"
                                 />
+                                <button type="submit" disabled={isSearching} className="absolute left-3 top-3 bottom-3 px-6 bg-teal-glow/10 hover:bg-teal-glow/20 text-teal-glow rounded-lg border border-teal-glow/30 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {isSearching ? '...' : 'کاوش'}
+                                </button>
                             </div>
-                            <button 
-                                type="submit" 
-                                disabled={isSearching}
-                                className="bg-garden-dark text-white px-8 py-3 rounded-lg font-medium hover:bg-tile-dark disabled:opacity-70 shadow-md transition-all flex items-center justify-center gap-2 w-full md:w-auto"
-                            >
-                                {isSearching ? <span className="animate-pulse">...</span> : 'جستجو'}
-                            </button>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <select 
-                                value={filters.period}
-                                onChange={e => setFilters({...filters, period: e.target.value as HistoricalPeriod})}
-                                className="border border-gray-300 rounded px-4 py-2 text-base md:text-sm text-gray-700 bg-white focus:border-tile-blue focus:ring-0 w-full"
-                            >
-                                {Object.values(HistoricalPeriod).map(p => (
-                                    <option key={p} value={p}>{PERIOD_LABELS[p]}</option>
-                                ))}
-                            </select>
                             
-                            <select 
-                                value={filters.topic}
-                                onChange={e => setFilters({...filters, topic: e.target.value as ResearchTopic})}
-                                className="border border-gray-300 rounded px-4 py-2 text-base md:text-sm text-gray-700 bg-white focus:border-tile-blue focus:ring-0 w-full"
-                            >
-                                {Object.values(ResearchTopic).map(t => (
-                                    <option key={t} value={t}>{TOPIC_LABELS[t]}</option>
+                            <div className="flex flex-wrap gap-3">
+                                {Object.values(HistoricalPeriod).map(p => (
+                                    <button 
+                                        key={p} 
+                                        type="button"
+                                        onClick={() => setFilters({...filters, period: p})}
+                                        className={`text-xs px-3 py-1.5 rounded-full border transition-all ${filters.period === p ? 'bg-gold-primary/20 border-gold-primary text-gold-primary' : 'border-white/5 text-gray-500 hover:border-white/20'}`}
+                                    >
+                                        {PERIOD_LABELS[p]}
+                                    </button>
                                 ))}
-                            </select>
-                        </div>
-                    </form>
-                    
-                    {/* Search Tabs */}
-                    <div className="flex justify-center mt-6 gap-2">
-                        <button 
-                            onClick={() => setSearchTab('papers')}
-                            className={`flex items-center gap-2 px-6 py-2 rounded-full text-sm font-medium transition-all duration-300 ${searchTab === 'papers' ? 'bg-tile-blue text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                        >
-                            <PaperIcon /> منابع متنی <span className="opacity-70 text-xs font-sans">({paperResults.length})</span>
-                        </button>
-                         <button 
-                            onClick={() => setSearchTab('art')}
-                            className={`flex items-center gap-2 px-6 py-2 rounded-full text-sm font-medium transition-all duration-300 ${searchTab === 'art' ? 'bg-clay-accent text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                        >
-                            <GalleryIcon /> آرشیو تصویری (نگارگری) <span className="opacity-70 text-xs font-sans">({artResults.length})</span>
-                        </button>
+                            </div>
+                        </form>
                     </div>
-                </div>
 
-                <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-paper-bg space-y-8">
-                    
-                    {/* Historical Travelogues Section (Appears first if relevant) */}
-                    {travelogueResults.length > 0 && (
-                        <div className="max-w-4xl mx-auto" dir="ltr">
-                            <div className="flex items-center gap-2 mb-4">
-                                <span className="text-xl">📜</span>
-                                <h3 className="font-serif text-xl text-garden-dark border-b-2 border-gold-accent pb-1 pr-4 inline-block">Historical Travelogues</h3>
+                    {/* LOADING STATE - INTELLIGENT OVERLAY */}
+                    {isSearching ? (
+                        <div className="flex-1 flex flex-col items-center justify-center relative glass-panel overflow-hidden">
+                            {/* Animated Background Radar */}
+                            <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+                                <div className="w-[600px] h-[600px] border border-teal-glow rounded-full animate-[spin_10s_linear_infinite]"></div>
+                                <div className="absolute w-[400px] h-[400px] border border-gold-primary rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
+                                <div className="absolute w-[200px] h-[200px] border border-white/20 rounded-full animate-pulse"></div>
                             </div>
-                            <div className="grid grid-cols-1 gap-4">
-                                {travelogueResults.map(chunk => (
-                                    <div key={chunk.id} className="bg-[#fdfbf7] border border-[#e8dfc4] p-5 rounded-sm shadow-sm relative overflow-hidden group">
-                                        {/* Decorative Corner */}
-                                        <div className="absolute top-0 right-0 w-8 h-8 bg-gradient-to-bl from-[#e8dfc4] to-transparent"></div>
-                                        
-                                        <p className="font-serif text-lg leading-relaxed text-gray-800 italic mb-3 selectable-text">
-                                            "{chunk.excerpt}"
-                                        </p>
-                                        <div className="flex flex-wrap items-center justify-between text-sm text-gray-600 font-sans border-t border-[#e8dfc4] pt-3 mt-2">
-                                            <div>
-                                                <span className="font-bold text-clay-accent">{chunk.bookTitle}</span>
-                                                <span className="mx-2 text-gray-400">•</span>
-                                                <span>{chunk.author} ({chunk.year})</span>
-                                            </div>
-                                            <button 
-                                                onClick={() => setSelectedTravelogue(chunk)}
-                                                className="mt-2 sm:mt-0 text-garden-dark font-medium hover:underline flex items-center gap-1"
-                                            >
-                                                <BookIcon /> Read More
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
 
-                    {/* Empty State */}
-                    {paperResults.length === 0 && artResults.length === 0 && travelogueResults.length === 0 && !isSearching && (
-                        <div className="flex flex-col items-center justify-center h-48 text-gray-400">
-                            <div className="text-4xl md:text-6xl mb-4 opacity-20">🏛️</div>
-                            <p className="text-lg md:text-xl font-nastaliq text-gray-500 mb-2">برای دسترسی به نمایه دانشگاهی، جستجو کنید</p>
-                        </div>
-                    )}
-
-                    {/* Papers List */}
-                    {searchTab === 'papers' && (
-                         <div className="grid grid-cols-1 gap-4 max-w-4xl mx-auto pb-20 md:pb-0">
-                            {paperResults.map((result) => (
-                                <div 
-                                    key={result.id} 
-                                    className="bg-white p-5 md:p-6 rounded-lg border-r-4 border-r-transparent hover:border-r-tile-blue shadow-sm hover:shadow-md transition-all duration-300 group"
-                                >
-                                    <div className="flex flex-col md:flex-row justify-between items-start gap-3 md:gap-4">
-                                        <div className="flex-1 w-full">
-                                            <div className="flex flex-wrap items-center gap-2 mb-2">
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getBadgeColor(result.apiSource)}`}>
-                                                     {SOURCE_LABELS[result.apiSource || 'Local'] || result.apiSource}
-                                                </span>
-                                                {result.citationCount !== undefined && result.citationCount > 0 && (
-                                                    <span className="text-[10px] flex items-center gap-1 text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-sans">
-                                                       <StarIcon /> {result.citationCount}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <h3 
-                                                className="text-lg md:text-xl text-garden-dark font-bold cursor-pointer hover:text-tile-blue transition-colors leading-relaxed font-sans selectable-text"
-                                                onClick={() => handleQuickAdd(result)}
-                                            >
-                                                {result.title}
-                                            </h3>
-                                            <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm text-gray-500 mt-2">
-                                                <span className="text-clay-accent font-medium">{result.authors?.join('، ')}</span>
-                                                <span className="text-gray-300 hidden md:inline">•</span>
-                                                <span className="font-sans bg-gray-50 px-2 rounded border border-gray-100">{result.year}</span>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2 self-end md:self-start flex-shrink-0">
-                                            {result.url && (
-                                                <button 
-                                                    onClick={() => openExternalLink(result.url!)}
-                                                    className="text-gray-400 hover:text-tile-blue p-2 rounded-full transition hover:bg-cyan-50"
-                                                    title="مشاهده لینک اصلی"
-                                                >
-                                                    <ExternalLinkIcon />
-                                                </button>
-                                            )}
-                                            <button 
-                                                onClick={() => handleQuickAdd(result)}
-                                                className="text-garden-dark hover:bg-garden-light hover:text-garden-dark p-2 rounded-full transition border border-gray-200 hover:border-garden-dark"
-                                                title="افزودن سریع به کتابخانه"
-                                            >
-                                                <PlusIcon />
-                                            </button>
-                                        </div>
+                            <div className="z-10 text-center max-w-2xl px-6">
+                                <div className="mb-8 flex justify-center">
+                                    <div className="w-16 h-16 relative">
+                                        <div className="absolute inset-0 border-4 border-t-teal-glow border-r-transparent border-b-gold-primary border-l-transparent rounded-full animate-spin"></div>
+                                        <div className="absolute inset-2 border-2 border-white/20 rounded-full"></div>
                                     </div>
-                                    <p className="text-gray-600 mt-3 text-sm leading-relaxed text-justify border-t border-gray-50 pt-3 hidden sm:block selectable-text">
-                                        {result.abstract}
-                                    </p>
                                 </div>
-                            ))}
+                                
+                                <h3 className="text-gold-primary font-nastaliq text-2xl mb-4 animate-fade-in-up">
+                                    {LOADING_FACTS[currentFactIndex].title}
+                                </h3>
+                                
+                                <p className="text-gray-300 text-lg leading-loose font-serif animate-fade-in">
+                                    «{LOADING_FACTS[currentFactIndex].text}»
+                                </p>
+
+                                <div className="mt-8 flex flex-col items-center gap-2">
+                                    <div className="h-1 w-64 bg-white/10 rounded-full overflow-hidden">
+                                        <div className="h-full bg-gradient-to-r from-teal-glow to-gold-primary w-1/3 animate-[translateX_3s_ease-in-out_infinite_alternate] relative left-0"></div>
+                                    </div>
+                                    <span className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">
+                                        Processing Knowledge Graph...
+                                    </span>
+                                </div>
+                            </div>
                         </div>
-                    )}
-                    
-                    {/* Art Gallery Grid */}
-                    {searchTab === 'art' && (
-                        <div className="columns-1 sm:columns-2 md:columns-3 gap-6 max-w-6xl mx-auto space-y-6 pb-20 md:pb-0" dir="ltr">
-                             {artResults.map(art => (
-                                 <div key={art.id} className="break-inside-avoid bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow border border-gray-100 group">
-                                     <div className="relative overflow-hidden">
-                                         <img 
-                                            src={art.imageUrl} 
-                                            alt={art.title} 
-                                            className="w-full h-auto object-cover transform group-hover:scale-105 transition-transform duration-700 ease-out"
-                                            loading="lazy"
-                                         />
-                                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-4">
-                                             <button 
-                                                onClick={() => openExternalLink(art.highResUrl)}
-                                                className="text-white text-xs bg-white/20 backdrop-blur px-3 py-1 rounded-full hover:bg-white/40 transition"
-                                             >
-                                                View Original ↗
-                                             </button>
-                                             <button 
-                                                onClick={() => handleQuickAddArt(art)}
-                                                className="bg-clay-accent text-white p-2 rounded-full hover:bg-orange-600 shadow-lg transform hover:scale-110 transition"
-                                                title="Save to Library"
-                                             >
-                                                <PlusIcon />
-                                             </button>
-                                         </div>
+                    ) : (
+                    /* Results Grid */
+                    <div className="flex-1 overflow-y-auto pb-10">
+                         {/* Tabs */}
+                         <div className="flex gap-6 mb-4 border-b border-white/5 pb-2 px-2">
+                             <button onClick={() => setSearchTab('papers')} className={`pb-2 text-sm transition-colors ${searchTab === 'papers' ? 'text-white border-b-2 border-teal-glow' : 'text-gray-500'}`}>
+                                 منابع متنی ({paperResults.length})
+                             </button>
+                             <button onClick={() => setSearchTab('art')} className={`pb-2 text-sm transition-colors ${searchTab === 'art' ? 'text-white border-b-2 border-gold-primary' : 'text-gray-500'}`}>
+                                 تصاویر و نگارگری ({artResults.length})
+                             </button>
+                         </div>
+
+                         {/* Cards */}
+                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                             {searchTab === 'papers' && paperResults.map((p, i) => (
+                                 <div key={i} className="glass-panel p-4 hover:border-teal-glow/30 transition-all group relative overflow-hidden flex flex-col">
+                                     <div className="flex justify-between items-start mb-2">
+                                         <span className="text-[10px] px-2 py-0.5 rounded bg-white/5 text-gray-400 border border-white/5">
+                                             {SOURCE_LABELS[p.apiSource || ''] || 'Web'}
+                                         </span>
+                                         <span className="text-[10px] text-gray-500 font-mono">{p.year}</span>
                                      </div>
-                                     <div className="p-4">
-                                         <h4 className="font-bold text-gray-800 text-sm mb-1 leading-snug selectable-text">{art.title}</h4>
-                                         <p className="text-xs text-clay-accent font-medium mb-2">{art.artist}</p>
-                                         <div className="flex flex-wrap gap-2 text-[10px] text-gray-500 font-sans border-t border-gray-100 pt-2">
-                                             <span className="bg-gray-50 px-2 py-0.5 rounded">{art.date}</span>
-                                             <span className="bg-gray-50 px-2 py-0.5 rounded truncate max-w-[150px]">{art.period}</span>
+                                     <h3 className="font-bold text-text-primary text-sm mb-2 leading-relaxed group-hover:text-teal-glow transition-colors">{p.title}</h3>
+                                     <p className="text-xs text-gray-500 line-clamp-2 mb-4 flex-1">{p.abstract}</p>
+                                     <div className="flex justify-between items-center mt-auto border-t border-white/5 pt-3">
+                                         <span className="text-[10px] text-gray-600 truncate max-w-[150px]">{p.authors?.join('، ')}</span>
+                                         <div className="flex items-center gap-2">
+                                             {p.url && (
+                                                <button onClick={() => openExternalLink(p.url!)} title="مشاهده آنلاین" className="text-gray-500 hover:text-white transition-colors">
+                                                    <span className="text-xs">🔗</span>
+                                                </button>
+                                             )}
+                                             <button onClick={() => handleQuickAdd(p)} className="text-teal-glow hover:text-white bg-teal-glow/10 p-1.5 rounded-lg hover:bg-teal-glow/30 transition-colors" title="افزودن به کتابخانه">
+                                                 <span className="text-lg">+</span>
+                                             </button>
                                          </div>
                                      </div>
                                  </div>
                              ))}
-                        </div>
-                    )}
 
-                </div>
-            </div>
-        )}
-
-        {/* Atlas/Map View */}
-        {currentView === View.ATLAS && (
-            <IranMap onProvinceSelect={handleMapSearch} />
-        )}
-
-        {/* Library View */}
-        {currentView === View.LIBRARY && (
-            <div className="flex flex-col h-full">
-                <div className="p-6 md:p-8 border-b border-gray-200 bg-white flex flex-col gap-6 shadow-sm z-10 shrink-0">
-                    <div className="flex flex-wrap gap-4 justify-between items-center">
-                        <div>
-                            <h2 className="text-2xl md:text-3xl font-nastaliq text-garden-dark mt-2 hidden md:block">آرشیو محلی</h2>
-                            <p className="text-sm text-gray-500 mt-1 font-sans flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-tile-blue inline-block"></span>
-                                {loadingLib ? '...' : library.length} سند ذخیره شده
-                            </p>
-                        </div>
-                        
-                        <div className="flex items-center gap-4">
-                            {/* View Switcher */}
-                            <div className="bg-gray-100 p-1 rounded-lg flex items-center">
-                                <button 
-                                    onClick={() => setLibraryView('grid')}
-                                    className={`p-2 rounded-md transition ${settings.libraryView === 'grid' ? 'bg-white shadow text-garden-dark' : 'text-gray-400 hover:text-gray-600'}`}
-                                    title="نمای شبکه‌ای"
-                                >
-                                    <GridIcon />
-                                </button>
-                                <button 
-                                    onClick={() => setLibraryView('list')}
-                                    className={`p-2 rounded-md transition ${settings.libraryView === 'list' ? 'bg-white shadow text-garden-dark' : 'text-gray-400 hover:text-gray-600'}`}
-                                    title="نمای لیستی"
-                                >
-                                    <ListIcon />
-                                </button>
-                            </div>
-
-                            <button 
-                                onClick={() => {
-                                    setPaperToEdit(null);
-                                    setIsDbModalOpen(true);
-                                }}
-                                className="bg-gradient-to-r from-clay-accent to-orange-700 text-white px-5 py-2 md:px-6 md:py-2.5 rounded-lg shadow-md hover:shadow-lg hover:from-orange-700 hover:to-clay-accent transition-all text-sm flex items-center gap-2 font-medium"
-                            >
-                                <PlusIcon />
-                                <span className="hidden sm:inline">سند جدید</span>
-                            </button>
-                        </div>
+                            {searchTab === 'art' && artResults.map((a) => (
+                                 <div key={a.id} className="glass-panel p-0 overflow-hidden group">
+                                     <div className="relative h-48">
+                                         <img src={a.imageUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent opacity-60 group-hover:opacity-40 transition-opacity"></div>
+                                         <button onClick={() => handleQuickAddArt(a)} className="absolute bottom-2 left-2 bg-gold-primary text-black w-8 h-8 rounded-full flex items-center justify-center shadow-glow-gold hover:scale-110 transition-transform">
+                                             +
+                                         </button>
+                                     </div>
+                                     <div className="p-3">
+                                         <h3 className="text-xs font-bold text-white mb-1 truncate">{a.title}</h3>
+                                         <p className="text-[10px] text-gold-primary">{a.period}</p>
+                                     </div>
+                                 </div>
+                             ))}
+                         </div>
                     </div>
+                    )}
+                </div>
+            )}
 
-                    {/* Local Search Bar */}
-                    <div className="relative group w-full max-w-2xl">
-                        <div className="absolute top-1/2 -translate-y-1/2 right-3 text-gray-400 group-focus-within:text-tile-blue transition-colors">
-                            <SearchIcon />
-                        </div>
+            {/* VIEW: ATLAS */}
+            {currentView === View.ATLAS && <IranMap onProvinceSelect={handleMapSearch} />}
+
+            {/* VIEW: LIBRARY */}
+            {currentView === View.LIBRARY && (
+                <div className="h-full flex flex-col gap-6">
+                    <div className="glass-panel p-4 flex justify-between items-center shrink-0">
                         <input 
                             type="text" 
                             value={librarySearchQuery}
-                            onChange={(e) => setLibrarySearchQuery(e.target.value)}
-                            placeholder="جستجو در کتابخانه (عنوان، نویسنده، متن، برچسب...)"
-                            className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-tile-blue focus:ring-1 focus:ring-tile-blue transition-all text-base md:text-sm selectable-text"
+                            onChange={e => setLibrarySearchQuery(e.target.value)}
+                            placeholder="جستجو در آرشیو شخصی..."
+                            className="bg-transparent border-none text-white focus:ring-0 w-full placeholder-gray-600"
                         />
-                         {librarySearchQuery && (
-                            <button 
-                                onClick={() => setLibrarySearchQuery('')}
-                                className="absolute top-1/2 -translate-y-1/2 left-3 text-gray-400 hover:text-red-500 transition-colors bg-transparent border-none p-0 cursor-pointer"
-                                title="پاک کردن جستجو"
-                            >
-                                ✕
-                            </button>
-                         )}
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-paper-bg">
-                    {loadingLib ? (
-                         <div className="text-center text-gray-400 mt-20">
-                             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-garden-dark mx-auto mb-4"></div>
-                             <p className="text-lg font-nastaliq">در حال بارگذاری آرشیو...</p>
-                         </div>
-                    ) : library.length === 0 ? (
-                         <div className="text-center text-gray-400 mt-20">
-                            <div className="text-5xl md:text-6xl mb-4 opacity-20">📚</div>
-                            <p className="text-lg font-nastaliq">کتابخانه شما خالی است</p>
-                        </div>
-                    ) : filteredLibrary.length === 0 ? (
-                        <div className="text-center text-gray-400 mt-20">
-                            <div className="text-5xl md:text-6xl mb-4 opacity-20">🔍</div>
-                            <p className="text-lg font-nastaliq mb-2">نتیجه‌ای یافت نشد</p>
-                            <p className="text-sm font-sans">برای عبارت «{librarySearchQuery}» سندی پیدا نشد.</p>
-                        </div>
-                    ) : (
-                        <div className={`
-                            ${settings.libraryView === 'grid' 
-                                ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6' 
-                                : 'flex flex-col gap-3'
-                            }
-                            pb-20 md:pb-0
-                        `}>
-                            {filteredLibrary.map((paper) => (
-                                <div 
-                                    key={paper.id} 
-                                    onClick={() => handleOpenReader(paper)}
-                                    className={`
-                                        bg-white group border border-gray-200 cursor-pointer hover:shadow-xl transition-all duration-300 relative overflow-hidden
-                                        ${settings.libraryView === 'grid' 
-                                            ? 'rounded-xl flex flex-col h-auto md:h-72' 
-                                            : 'rounded-lg flex flex-row items-center p-3 hover:border-tile-blue'
-                                        }
-                                    `}
-                                >
-                                    {/* Grid View Content */}
-                                    {settings.libraryView === 'grid' && (
-                                        <>
-                                            {paper.thumbnailUrl ? (
-                                                <div className="h-32 w-full bg-gray-200 overflow-hidden relative">
-                                                    <img src={paper.thumbnailUrl} alt={paper.title} className="w-full h-full object-cover" />
-                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
-                                                </div>
-                                            ) : (
-                                                <div className={`h-1.5 w-full ${paper.isLocal ? 'bg-tile-blue' : 'bg-gray-300'}`}></div>
-                                            )}
-                                            
-                                            <div className="absolute top-4 left-4 md:opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 z-10 bg-white/90 p-1 rounded-lg shadow-sm backdrop-blur-sm">
-                                                 <button onClick={(e) => handleEditPaper(paper, e)} className="p-1.5 text-gray-500 hover:text-tile-blue rounded transition"><EditIcon /></button>
-                                                 <button onClick={(e) => handleDeletePaper(paper.id, e)} className="p-1.5 text-gray-500 hover:text-red-600 rounded transition">&times;</button>
-                                            </div>
-                                            <div className="flex-1 p-5 flex flex-col">
-                                                <div className="flex gap-1 flex-wrap mb-2">
-                                                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${paper.isLocal ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-gray-50 text-gray-500 border border-gray-100'}`}>{paper.isLocal ? 'PDF' : 'Meta'}</span>
-                                                    {paper.apiSource && <span className={`text-[9px] px-1 py-0.5 border rounded-full ${getBadgeColor(paper.apiSource)}`}>{SOURCE_LABELS[paper.apiSource] || paper.apiSource}</span>}
-                                                </div>
-                                                <h3 className="text-base md:text-lg font-bold text-gray-800 group-hover:text-tile-blue transition-colors line-clamp-2 leading-tight font-sans mb-2" dir={paper.docType === 'artwork' ? 'ltr' : 'rtl'}>{paper.title}</h3>
-                                                <p className="text-xs text-clay-accent font-medium mb-1 line-clamp-1">{paper.authors.join('، ')}</p>
-                                                <p className="text-xs text-gray-400 font-sans mb-3">{paper.year}</p>
-                                                {paper.docType !== 'artwork' && (
-                                                    <p className="text-sm text-gray-500 line-clamp-3 leading-relaxed text-justify opacity-80 hidden sm:block">{paper.abstract}</p>
-                                                )}
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {/* List View Content */}
-                                    {settings.libraryView === 'list' && (
-                                        <>
-                                            {paper.thumbnailUrl ? (
-                                                <div className="w-16 h-16 rounded overflow-hidden mr-3 shrink-0 ml-3">
-                                                    <img src={paper.thumbnailUrl} className="w-full h-full object-cover" />
-                                                </div>
-                                            ) : (
-                                                <div className={`w-1 h-full absolute right-0 top-0 bottom-0 ${paper.isLocal ? 'bg-tile-blue' : 'bg-gray-300'}`}></div>
-                                            )}
-                                            
-                                            <div className="flex-1 min-w-0 pr-3">
-                                                <h3 className="text-sm md:text-base font-bold text-gray-800 group-hover:text-tile-blue truncate">{paper.title}</h3>
-                                                <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                                                    <span className="text-clay-accent">{paper.authors[0]}</span>
-                                                    <span className="hidden sm:inline text-gray-300">•</span>
-                                                    <span className="hidden sm:inline font-sans">{paper.year}</span>
-                                                    {paper.apiSource && <span className={`hidden sm:inline px-1.5 py-0.5 rounded border text-[9px] ${getBadgeColor(paper.apiSource)}`}>{paper.apiSource}</span>}
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-center gap-2 pl-2">
-                                                 <button onClick={(e) => handleEditPaper(paper, e)} className="p-2 text-gray-400 hover:text-tile-blue rounded-full hover:bg-gray-100 transition"><EditIcon /></button>
-                                                 <button onClick={(e) => handleDeletePaper(paper.id, e)} className="p-2 text-gray-400 hover:text-red-600 rounded-full hover:bg-gray-100 transition text-lg leading-none">&times;</button>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-        )}
-
-        {/* Reader View */}
-        {currentView === View.READER && (
-            <PDFReader 
-                paper={currentPaper} 
-                onUpdateNote={handleUpdateNote}
-                onClose={() => setCurrentView(View.LIBRARY)}
-            />
-        )}
-        
-        {/* Settings View */}
-        {currentView === View.SETTINGS && (
-             <div className="p-6 md:p-12 overflow-y-auto h-full">
-                 <h2 className="text-2xl md:text-3xl font-nastaliq text-garden-dark mb-6 mt-2">تنظیمات سیستم</h2>
-                 
-                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Appearance */}
-                    <div className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
-                        <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">ظاهر و چیدمان</h3>
-                        <div className="space-y-6">
-                            
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="font-medium text-sm">منوی کناری (دسکتاپ)</p>
-                                    <p className="text-xs text-gray-500">حالت فشرده فضای بیشتری برای مطالعه می‌دهد</p>
-                                </div>
-                                <div className="flex bg-gray-100 p-1 rounded-lg">
-                                    <button 
-                                        onClick={() => setSettings(s => ({...s, sidebarMode: 'expanded'}))}
-                                        className={`px-3 py-1.5 text-xs rounded-md transition ${settings.sidebarMode === 'expanded' ? 'bg-white shadow text-garden-dark font-bold' : 'text-gray-500'}`}
-                                    >
-                                        گسترده
-                                    </button>
-                                    <button 
-                                        onClick={() => setSettings(s => ({...s, sidebarMode: 'compact'}))}
-                                        className={`px-3 py-1.5 text-xs rounded-md transition ${settings.sidebarMode === 'compact' ? 'bg-white shadow text-garden-dark font-bold' : 'text-gray-500'}`}
-                                    >
-                                        فشرده
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="font-medium text-sm">نمای پیش‌فرض کتابخانه</p>
-                                    <p className="text-xs text-gray-500">نحوه نمایش اسناد در آرشیو</p>
-                                </div>
-                                <div className="flex bg-gray-100 p-1 rounded-lg">
-                                    <button 
-                                        onClick={() => setLibraryView('grid')}
-                                        className={`px-3 py-1.5 text-xs rounded-md transition ${settings.libraryView === 'grid' ? 'bg-white shadow text-garden-dark font-bold' : 'text-gray-500'}`}
-                                    >
-                                        شبکه‌ای
-                                    </button>
-                                    <button 
-                                        onClick={() => setLibraryView('list')}
-                                        className={`px-3 py-1.5 text-xs rounded-md transition ${settings.libraryView === 'list' ? 'bg-white shadow text-garden-dark font-bold' : 'text-gray-500'}`}
-                                    >
-                                        لیستی
-                                    </button>
-                                </div>
-                            </div>
-
-                        </div>
+                        <button onClick={() => {setPaperToEdit(null); setIsDbModalOpen(true);}} className="bg-gold-primary/20 text-gold-primary px-4 py-2 rounded-lg text-xs font-bold border border-gold-primary/50 hover:bg-gold-primary hover:text-black transition-colors shrink-0">
+                            + ثبت سند
+                        </button>
                     </div>
 
-                    {/* Data Management */}
-                    <div className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-20 h-20 bg-pattern-girih opacity-10"></div>
-                        <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">مدیریت داده‌ها (پشتیبان‌گیری)</h3>
+                    <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-4 gap-4 pb-10">
+                        {displayedLibrary.map(p => (
+                            <div key={p.id} onClick={() => {setCurrentPaper(p); setCurrentView(View.READER);}} className="glass-panel p-0 cursor-pointer group hover:border-gold-primary/30 transition-all flex flex-col">
+                                <div className="h-32 bg-black/40 relative overflow-hidden border-b border-white/5">
+                                    {p.thumbnailUrl ? (
+                                        <img src={p.thumbnailUrl} className="w-full h-full object-cover opacity-50 group-hover:opacity-80 transition-opacity" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-4xl text-white/5 group-hover:text-gold-primary/20 transition-colors">📄</div>
+                                    )}
+                                    <div className="absolute top-2 right-2 flex gap-1">
+                                        <span className={`text-[8px] px-1.5 py-0.5 rounded border ${p.isLocal ? 'border-teal-glow text-teal-glow' : 'border-gray-600 text-gray-500'}`}>
+                                            {p.isLocal ? 'فایل' : 'متادیتا'}
+                                        </span>
+                                        {!p.isLocal && p.url && (
+                                            <span className="text-[8px] px-1.5 py-0.5 rounded border border-blue-500 text-blue-400 bg-blue-500/10">لینک</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="p-3 flex-1 flex flex-col">
+                                    <h3 className="text-xs font-bold text-text-primary mb-1 line-clamp-2">{p.title}</h3>
+                                    <div className="mt-auto flex justify-between items-center text-[9px] text-gray-500 pt-2 border-t border-white/5">
+                                        <span>{p.year}</span>
+                                        <div className="flex gap-2">
+                                             {p.url && (
+                                                <button onClick={(e) => { e.stopPropagation(); openExternalLink(p.url!); }} className="hover:text-teal-glow" title="لینک خارجی">↗</button>
+                                             )}
+                                             <button onClick={(e) => handleDeletePaper(p.id, e)} className="hover:text-red-400">حذف</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* VIEW: TIMELINE */}
+            {currentView === View.TIMELINE && (
+                <div className="h-full overflow-y-auto px-4 pb-20 relative">
+                    <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-gold-primary/30 to-transparent"></div>
+                    
+                    {Object.values(HistoricalPeriod).map((period, index) => {
+                         const papers = library.filter(p => p.period === period);
+                         if (papers.length === 0) return null;
+                         return (
+                             <div key={period} className={`flex items-center gap-8 mb-12 ${index % 2 === 0 ? 'flex-row-reverse' : ''}`}>
+                                 <div className={`w-1/2 ${index % 2 === 0 ? 'text-right' : 'text-left'}`}>
+                                     <div className="glass-panel p-4 inline-block max-w-sm hover:border-gold-primary/50 transition-colors group">
+                                         <h3 className="text-gold-primary font-nastaliq text-lg mb-2 drop-shadow-sm">{PERIOD_LABELS[period]}</h3>
+                                         <div className="space-y-2">
+                                             {papers.map(p => (
+                                                 <div key={p.id} onClick={() => {setCurrentPaper(p); setCurrentView(View.READER);}} className="text-xs text-gray-400 hover:text-white cursor-pointer truncate border-b border-white/5 pb-1 last:border-0">
+                                                     {p.title}
+                                                 </div>
+                                             ))}
+                                         </div>
+                                     </div>
+                                 </div>
+                                 <div className="relative z-10 flex flex-col items-center justify-center">
+                                     <div className="w-4 h-4 bg-black border-2 border-gold-primary rounded-full shadow-glow-gold"></div>
+                                 </div>
+                                 <div className="w-1/2"></div>
+                             </div>
+                         )
+                    })}
+                </div>
+            )}
+
+            {/* VIEW: SETTINGS (Restored & Styled) */}
+            {currentView === View.SETTINGS && (
+                <div className="h-full overflow-y-auto max-w-4xl mx-auto space-y-8">
+                    <div className="glass-panel p-8">
+                        <h2 className="text-2xl font-nastaliq text-gold-primary mb-6 border-b border-white/10 pb-4">تنظیمات سیستم</h2>
                         
-                        <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-bold text-text-primary">پشتیبان‌گیری داده‌ها</h3>
+                                <p className="text-xs text-gray-500">تهیه نسخه پشتیبان از تمام متادیتاهای کتابخانه.</p>
+                                <div className="flex gap-3">
+                                    <button onClick={handleExport} className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 rounded-lg text-xs transition-colors">
+                                        دریافت فایل پشتیبان (Export)
+                                    </button>
+                                    <label className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white py-2 rounded-lg text-xs transition-colors text-center cursor-pointer">
+                                        بازیابی (Import)
+                                        <input type="file" accept=".json" onChange={handleImport} className="hidden" />
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-bold text-text-primary">نمایش</h3>
+                                <div className="flex justify-between items-center p-3 bg-black/20 rounded-lg border border-white/5">
+                                    <span className="text-xs text-gray-400">حالت منو</span>
+                                    <button onClick={toggleSidebarMode} className="text-teal-glow text-xs hover:underline">
+                                        {settings.sidebarMode === 'expanded' ? 'گسترده' : 'فشرده'}
+                                    </button>
+                                </div>
+                                <div className="flex justify-between items-center p-3 bg-black/20 rounded-lg border border-white/5">
+                                    <span className="text-xs text-gray-400">چیدمان پیش‌فرض</span>
+                                    <button onClick={() => setLibraryView(settings.libraryView === 'grid' ? 'list' : 'grid')} className="text-teal-glow text-xs hover:underline">
+                                        {settings.libraryView === 'grid' ? 'شبکه‌ای' : 'لیستی'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-8 pt-6 border-t border-white/10 text-center">
                             <button 
-                                onClick={handleExportBackup}
-                                className="w-full border border-gray-300 hover:border-tile-blue text-gray-700 hover:text-tile-blue px-4 py-3 rounded-lg transition flex items-center justify-center gap-3 bg-gray-50 hover:bg-white"
+                                onClick={() => { if(confirm("تمام اطلاعات حذف شود؟")) { indexedDB.deleteDatabase('PardisScholarDB'); window.location.reload(); } }}
+                                className="text-red-500/60 hover:text-red-500 text-xs transition-colors"
                             >
-                                <span className="text-xl">⬇️</span>
-                                <div>
-                                    <span className="block font-bold text-sm">دریافت نسخه پشتیبان (Export)</span>
-                                    <span className="block text-[10px] opacity-70">دانلود فایل JSON شامل تمام اطلاعات</span>
-                                </div>
-                            </button>
-
-                            <label className="w-full border border-gray-300 hover:border-green-600 text-gray-700 hover:text-green-700 px-4 py-3 rounded-lg transition flex items-center justify-center gap-3 bg-gray-50 hover:bg-white cursor-pointer">
-                                <span className="text-xl">⬆️</span>
-                                <div>
-                                    <span className="block font-bold text-sm">بازگردانی اطلاعات (Import)</span>
-                                    <span className="block text-[10px] opacity-70">انتخاب فایل JSON برای بازیابی</span>
-                                </div>
-                                <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
-                            </label>
-
-                             <button 
-                                onClick={() => {
-                                    if(confirm("هشدار: تمام داده‌های کتابخانه حذف خواهد شد و قابل بازگشت نیست. ادامه می‌دهید؟")) {
-                                        // This creates a hard reset if needed
-                                        indexedDB.deleteDatabase('PardisScholarDB');
-                                        window.location.reload();
-                                    }
-                                }}
-                                className="text-red-600 text-xs hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded transition border border-transparent hover:border-red-100 flex items-center gap-2 w-full justify-center mt-4"
-                            >
-                                <span>⚠️</span>
                                 حذف کامل پایگاه داده و شروع مجدد
-                             </button>
+                            </button>
                         </div>
                     </div>
-                 </div>
 
-                 {/* Developer Credits */}
-                 <div className="mt-12 pt-8 border-t border-gray-200 text-center">
-                    <p className="text-gray-500 font-medium font-sans text-sm leading-loose">
-                        توسعه دهنده : کیان منصوری جمشیدی | درس: باغ ایرانی | استاد : دکتر جیحانی | دانشگاه بهشتی | 1404
-                    </p>
-                    <p className="text-xs text-gray-300 mt-2 font-sans opacity-50">
-                        Developed by Kian Mansouri Jamshidi
-                    </p>
-                </div>
-             </div>
-        )}
+                    {/* NEW CREDITS SECTION */}
+                    <div className="glass-panel p-8 text-center relative overflow-hidden border border-gold-primary/20">
+                         <div className="absolute inset-0 bg-gold-primary/5 opacity-0 hover:opacity-100 transition-opacity pointer-events-none"></div>
+                         
+                         <h3 className="text-gold-primary font-nastaliq text-xl mb-6">تیم پژوهش و توسعه سامانه</h3>
+                         
+                         <div className="space-y-4 font-sans">
+                             <div className="flex flex-col items-center">
+                                 <span className="text-xs text-gray-500 mb-1">توسعه دهنده نرم‌افزار</span>
+                                 <span className="text-lg text-white font-bold">کیان منصوری جمشیدی</span>
+                             </div>
 
-        {/* Database Modal Overlay */}
-        <DatabaseModal 
-            isOpen={isDbModalOpen} 
-            onClose={() => setIsDbModalOpen(false)}
-            onSave={handleSaveDbRecord}
-            initialData={paperToEdit}
-        />
+                             <div className="flex flex-col items-center">
+                                 <span className="text-xs text-gray-500 mb-1">استاد راهنما</span>
+                                 <span className="text-base text-teal-glow font-bold">دکتر جیحانی</span>
+                             </div>
 
-        {/* Travelogue Reading Modal */}
-        {selectedTravelogue && (
-            <div className="fixed inset-0 bg-garden-dark/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm" dir="ltr">
-                <div className="bg-[#fdfbf7] w-full max-w-2xl rounded shadow-2xl overflow-hidden flex flex-col max-h-[85vh] border border-[#e8dfc4]">
-                    <div className="bg-[#f3e9cf] p-4 border-b border-[#e8dfc4] flex justify-between items-center">
-                        <h3 className="font-serif font-bold text-lg text-garden-dark italic">{selectedTravelogue.bookTitle}</h3>
-                        <button onClick={() => setSelectedTravelogue(null)} className="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
-                    </div>
-                    <div className="p-8 overflow-y-auto font-serif text-lg leading-loose text-gray-800">
-                        <p className="first-letter:text-4xl first-letter:font-bold first-letter:float-left first-letter:mr-2 first-letter:mt-[-5px] selectable-text">
-                            {selectedTravelogue.text}
-                        </p>
-                        <div className="mt-8 pt-4 border-t border-gray-300 text-sm font-sans text-gray-500 flex justify-between items-center">
-                            <span>Author: {selectedTravelogue.author}, {selectedTravelogue.year}</span>
-                            <a 
-                                href={selectedTravelogue.sourceUrl} 
-                                target="_blank" 
-                                rel="noreferrer"
-                                className="text-tile-blue hover:underline flex items-center gap-1"
-                            >
-                                Read Full Book ↗
-                            </a>
-                        </div>
+                             <div className="w-1/2 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mx-auto my-4"></div>
+
+                             <div className="grid grid-cols-3 gap-4 text-xs text-gray-400">
+                                 <div>
+                                     <span className="block text-gold-primary/60 mb-1">درس</span>
+                                     باغ ایرانی
+                                 </div>
+                                 <div>
+                                     <span className="block text-gold-primary/60 mb-1">دانشگاه</span>
+                                     شهید بهشتی
+                                 </div>
+                                 <div>
+                                     <span className="block text-gold-primary/60 mb-1">سال تحصیلی</span>
+                                     ۱۴۰۴ - ۲۰۲۵
+                                 </div>
+                             </div>
+                         </div>
                     </div>
                 </div>
-            </div>
-        )}
+            )}
 
+            {/* Modals & Overlays */}
+            {currentView === View.READER && <PDFReader paper={currentPaper} onUpdateNote={() => {}} onClose={() => setCurrentView(View.LIBRARY)} />}
+            <DatabaseModal isOpen={isDbModalOpen} onClose={() => setIsDbModalOpen(false)} onSave={handleSaveDbRecord} initialData={paperToEdit} />
+            <CitationModal paper={citationPaper} onClose={() => setCitationPaper(null)} />
+        </div>
       </main>
     </div>
   );

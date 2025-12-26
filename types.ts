@@ -1,12 +1,14 @@
 
 
 
+
 export enum View {
   SEARCH = 'SEARCH',
   LIBRARY = 'LIBRARY',
   READER = 'READER',
   SETTINGS = 'SETTINGS',
-  ATLAS = 'ATLAS'
+  ATLAS = 'ATLAS',
+  TIMELINE = 'TIMELINE'
 }
 
 export enum HistoricalPeriod {
@@ -114,6 +116,14 @@ export interface AppSettings {
   sidebarMode: 'expanded' | 'compact';
   libraryView: 'grid' | 'list';
   theme: 'light' | 'dark';
+}
+
+export interface ChatMessage {
+    id: string;
+    role: 'user' | 'model';
+    text: string;
+    sources?: Partial<Paper>[];
+    isThinking?: boolean;
 }
 
 // --- Tauri Global Augmentation ---

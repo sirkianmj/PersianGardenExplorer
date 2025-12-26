@@ -1,9 +1,8 @@
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Paper, HistoricalPeriod, ResearchTopic } from '../types';
 import { saveFile } from '../services/storageService';
+import { processAndIndexPaper } from '../services/pdfProcessor';
 
 const PERIOD_LABELS: Record<HistoricalPeriod, string> = {
   [HistoricalPeriod.ALL]: 'همه دوره‌ها',
@@ -56,6 +55,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
   const [authorInput, setAuthorInput] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string>(''); 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,20 +81,15 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
       setAuthorInput('');
       setFile(null);
     }
+    setSaveStatus('');
   }, [initialData, isOpen]);
 
   const handleFileSelection = (selectedFile: File) => {
     setFile(selectedFile);
-    
-    // Intelligent Filename Parsing
-    // Try to guess metadata from filename formats like:
-    // "Author - Year - Title.pdf" or "Title - Author.pdf"
     if (!initialData) {
         const name = selectedFile.name.replace('.pdf', '');
         const parts = name.split('-').map(p => p.trim());
-        
         if (parts.length >= 3) {
-             // Heuristic: 1st is Author, 2nd is Year (if numeric), 3rd is Title
              const possibleYear = parts[1].match(/^\d{4}$/) ? parts[1] : '';
              if (possibleYear) {
                  setAuthorInput(parts[0]);
@@ -106,8 +101,6 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                  return;
              }
         }
-        
-        // Fallback: Just Title
         if (!formData.title) {
             setFormData(prev => ({...prev, title: name}));
         }
@@ -150,6 +143,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
   const handleSave = async () => {
     if (!validate()) return;
     setIsSaving(true);
+    setSaveStatus('در حال پردازش...');
 
     try {
       const processedAuthors = authorInput
@@ -164,14 +158,23 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
       }
       
       const id = initialData?.id || crypto.randomUUID();
+      const finalTitle = formData.title || 'بدون عنوان';
 
       if (file) {
+        setSaveStatus('ذخیره فایل...');
         await saveFile(id, file);
+        
+        setSaveStatus('نمایه‌سازی متن...');
+        try {
+            await processAndIndexPaper(id, finalTitle, processedAuthors, file);
+        } catch (indexError) {
+            console.error("Indexing failed, but file saved:", indexError);
+        }
       }
 
       const newPaper: Paper = {
         id: id,
-        title: formData.title || 'بدون عنوان',
+        title: finalTitle,
         authors: processedAuthors,
         year: formData.year || 'نامشخص',
         source: formData.source || 'ورودی دستی',
@@ -194,147 +197,152 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
       onClose();
     } catch (err) {
       console.error("Failed to save record:", err);
-      alert("خطا در ذخیره‌سازی فایل. لطفاً دسترسی‌ها را بررسی کنید.");
+      alert("خطا در ذخیره‌سازی فایل.");
     } finally {
       setIsSaving(false);
+      setSaveStatus('');
     }
   };
 
   const modalContent = (
-    <div className="fixed inset-0 bg-garden-dark/60 z-[100] flex items-center justify-center p-2 md:p-4 backdrop-blur-sm font-persian">
-      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col h-[90vh] md:max-h-[90vh] overflow-hidden border border-white/20">
+    <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-md font-sans" dir="rtl">
+      {/* Main Glass Modal */}
+      <div className="glass-panel w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10 relative">
         
-        {/* Header with Pattern */}
-        <div className="bg-garden-dark bg-pattern-girih text-white px-4 py-4 md:px-8 md:py-6 flex justify-between items-center shrink-0 relative overflow-hidden">
-          <div className="absolute inset-0 bg-garden-dark/90"></div>
-          <div className="relative z-10">
-            <h2 className="text-xl md:text-2xl font-nastaliq text-gold-accent drop-shadow-md">
-              {initialData ? 'ویرایش سند آرشیوی' : 'ثبت سند جدید'}
+        {/* Decorative Glows */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gold-primary opacity-5 rounded-full blur-[80px] pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-teal-glow opacity-5 rounded-full blur-[80px] pointer-events-none"></div>
+
+        {/* Header */}
+        <div className="px-8 py-6 border-b border-white/5 flex justify-between items-center shrink-0 z-10">
+          <div>
+            <h2 className="text-2xl font-nastaliq text-gold-primary mb-1 drop-shadow-sm">
+              {initialData ? 'ویرایش شناسنامه اثر' : 'ثبت سند جدید در آرشیو'}
             </h2>
-            <p className="text-[10px] md:text-xs text-white/70 mt-1 uppercase tracking-wider font-sans">سامانه مدیریت منابع پژوهشی</p>
+            <p className="text-xs text-gray-500 font-mono tracking-wider uppercase">
+                DIGITAL ASSET MANAGEMENT SYSTEM
+            </p>
           </div>
-          <button onClick={onClose} className="text-white/50 hover:text-white text-3xl z-10 transition-colors">&times;</button>
+          <button onClick={onClose} className="text-white/40 hover:text-white text-2xl transition-colors">&times;</button>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 bg-gray-50/50">
+        <div className="flex-1 overflow-y-auto p-8 grid grid-cols-1 lg:grid-cols-3 gap-8 z-10">
           
-          {/* Right Column (Form starts right in RTL) */}
-          <div className="lg:col-span-2 space-y-4 md:space-y-6">
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-2">عنوان مقاله / کتاب</label>
+          {/* Right Column: Metadata Form */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="space-y-2">
+              <label className="text-xs text-teal-glow font-bold">عنوان سند / کتاب</label>
               <input 
                 type="text"
                 value={formData.title}
                 onChange={e => setFormData({...formData, title: e.target.value})}
-                className={`w-full border p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent transition-shadow ${errors.title ? 'border-red-500' : 'border-gray-300'} text-base md:text-sm`}
+                className={`w-full bg-black/40 border ${errors.title ? 'border-red-500/50' : 'border-white/10'} rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-teal-glow/50 focus:ring-0 transition-colors text-sm`}
                 placeholder="عنوان کامل اثر را وارد کنید..."
               />
-              {errors.title && <span className="text-red-500 text-xs mt-1 block">{errors.title}</span>}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-2">نویسندگان (جداکننده ؛)</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="space-y-2">
+                <label className="text-xs text-gray-400">پدیدآورندگان (جداکننده ؛)</label>
                 <input 
                   type="text"
                   value={authorInput}
                   onChange={e => setAuthorInput(e.target.value)}
-                  className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent transition-shadow text-base md:text-sm"
-                  placeholder="مثال: پیرنیا، محمدکریم؛ پوپ، آرتور"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-teal-glow/50 focus:ring-0 transition-colors text-sm"
+                  placeholder="مثال: پیرنیا، محمدکریم؛ ..."
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                 <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2">سال انتشار</label>
+                 <div className="space-y-2">
+                    <label className="text-xs text-gray-400">سال انتشار</label>
                     <input 
                       type="text"
                       value={formData.year}
                       onChange={e => setFormData({...formData, year: e.target.value})}
-                      className={`w-full border p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent font-sans text-left ${errors.year ? 'border-red-500' : 'border-gray-300'} text-base md:text-sm`}
+                      className={`w-full bg-black/40 border ${errors.year ? 'border-red-500/50' : 'border-white/10'} rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-teal-glow/50 focus:ring-0 transition-colors text-sm text-left`}
                       placeholder="YYYY"
                       dir="ltr"
                     />
                  </div>
-                 <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2">زبان اثر</label>
+                 <div className="space-y-2">
+                    <label className="text-xs text-gray-400">زبان</label>
                     <select 
                       value={formData.language}
                       onChange={e => setFormData({...formData, language: e.target.value as 'en' | 'fa'})}
-                      className="w-full border border-gray-300 p-3 rounded-lg bg-white text-base md:text-sm"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-teal-glow/50 focus:ring-0 transition-colors text-sm"
                     >
-                      <option value="fa">فارسی</option>
-                      <option value="en">انگلیسی</option>
+                      <option value="fa" className="bg-mystic-deep">فارسی</option>
+                      <option value="en" className="bg-mystic-deep">English</option>
                     </select>
                  </div>
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-2">چکیده</label>
+            <div className="space-y-2">
+              <label className="text-xs text-gray-400">چکیده / توضیحات</label>
               <textarea 
                 rows={6}
                 value={formData.abstract}
                 onChange={e => setFormData({...formData, abstract: e.target.value})}
-                className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent text-base md:text-sm leading-relaxed"
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-teal-glow/50 focus:ring-0 transition-colors text-sm leading-relaxed scrollbar-thin"
                 placeholder="متن چکیده را اینجا وارد کنید..."
               />
             </div>
           </div>
 
-          {/* Left Column (Metadata/File) */}
-          <div className="space-y-4 md:space-y-6">
+          {/* Left Column: Classification & File */}
+          <div className="space-y-6">
             
-            <div className="bg-white p-4 md:p-5 rounded-xl border border-gray-200 shadow-sm">
-              <h3 className="text-sm font-bold text-garden-dark mb-4 border-b border-gray-100 pb-2 flex items-center gap-2">
-                <span className="text-lg">🏷️</span> طبقه‌بندی
+            <div className="bg-white/5 rounded-2xl p-5 border border-white/5 space-y-4">
+              <h3 className="text-xs font-bold text-gold-primary mb-2 flex items-center gap-2 border-b border-white/5 pb-2">
+                <span>✦</span> طبقه‌بندی
               </h3>
               
-              <div className="space-y-4">
-                <div>
-                   <label className="block text-xs text-gray-500 mb-1">منبع / نشریه</label>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                   <label className="text-[10px] text-gray-500">منبع / نشریه</label>
                    <input 
                       type="text"
                       value={formData.source}
                       onChange={e => setFormData({...formData, source: e.target.value})}
-                      className="w-full border border-gray-300 p-2.5 rounded text-base md:text-sm focus:border-tile-blue focus:ring-0"
-                      placeholder="مثال: مجله باغ نظر"
+                      className="w-full bg-black/20 border border-white/5 rounded-lg px-3 py-2 text-xs text-gray-300 focus:border-gold-primary/30 focus:ring-0"
                     />
                 </div>
                 
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">دوره تاریخی</label>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-500">دوره تاریخی</label>
                    <select 
                       value={formData.period}
                       onChange={e => setFormData({...formData, period: e.target.value as HistoricalPeriod})}
-                      className="w-full border border-gray-300 p-2.5 rounded text-base md:text-sm bg-white focus:border-tile-blue focus:ring-0"
+                      className="w-full bg-black/20 border border-white/5 rounded-lg px-3 py-2 text-xs text-gray-300 focus:border-gold-primary/30 focus:ring-0"
                     >
                       {Object.values(HistoricalPeriod).map(p => (
-                          <option key={p} value={p}>{PERIOD_LABELS[p]}</option>
+                          <option key={p} value={p} className="bg-mystic-deep">{PERIOD_LABELS[p]}</option>
                       ))}
                    </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">موضوع پژوهش</label>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-gray-500">موضوع پژوهش</label>
                    <select 
                       value={formData.topic}
                       onChange={e => setFormData({...formData, topic: e.target.value as ResearchTopic})}
-                      className="w-full border border-gray-300 p-2.5 rounded text-base md:text-sm bg-white focus:border-tile-blue focus:ring-0"
+                      className="w-full bg-black/20 border border-white/5 rounded-lg px-3 py-2 text-xs text-gray-300 focus:border-gold-primary/30 focus:ring-0"
                     >
                       {Object.values(ResearchTopic).map(t => (
-                          <option key={t} value={t}>{TOPIC_LABELS[t]}</option>
+                          <option key={t} value={t} className="bg-mystic-deep">{TOPIC_LABELS[t]}</option>
                       ))}
                    </select>
                 </div>
 
-                <div>
-                   <label className="block text-xs text-gray-500 mb-1">کلید ارجاع (BibTeX)</label>
+                <div className="space-y-1">
+                   <label className="text-[10px] text-gray-500">شناسه استناد (BibTeX)</label>
                    <input 
                       type="text"
                       value={formData.citationKey}
                       onChange={e => setFormData({...formData, citationKey: e.target.value})}
-                      className="w-full border border-gray-300 p-2.5 rounded text-base md:text-sm font-mono text-gray-600 text-left bg-gray-50"
+                      className="w-full bg-black/20 border border-white/5 rounded-lg px-3 py-2 text-xs text-gray-500 font-mono text-left focus:border-gold-primary/30 focus:ring-0"
                       placeholder="Auto-gen"
                       dir="ltr"
                     />
@@ -342,39 +350,33 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
               </div>
             </div>
 
-            {/* Drag & Drop File Area */}
+            {/* Holographic Drop Zone */}
             <div 
                 className={`
-                    p-4 md:p-5 rounded-xl border-2 border-dashed shadow-inner transition-all duration-300
-                    ${isDragging ? 'bg-cyan-100 border-tile-blue scale-105' : 'bg-cyan-50 border-cyan-200'}
+                    relative p-6 rounded-2xl border border-dashed transition-all duration-300 group cursor-pointer overflow-hidden
+                    ${isDragging ? 'bg-teal-glow/10 border-teal-glow' : 'bg-black/30 border-white/10 hover:border-teal-glow/50'}
                 `}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
             >
-              <h3 className="text-sm font-bold text-cyan-900 mb-2 border-b border-cyan-200 pb-2 flex items-center gap-2">
-                <span className="text-lg">💾</span> فایل دیجیتال (PDF)
-              </h3>
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-teal-glow/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
               
-              {(formData.isLocal || file) ? (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 text-green-800 text-sm font-medium bg-green-100/50 border border-green-200 p-3 rounded-lg">
-                    <span className="text-xl">✓</span> 
-                    <div className="truncate max-w-[150px]" dir="ltr">
-                        {file ? file.name : 'فایل پیوست شده است'}
-                    </div>
+              <div className="relative z-10 flex flex-col items-center justify-center text-center">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 transition-colors ${formData.isLocal || file ? 'bg-green-500/20 text-green-400' : 'bg-white/5 text-gray-400 group-hover:text-teal-glow'}`}>
+                      {formData.isLocal || file ? '✓' : '⇩'}
                   </div>
-                </div>
-              ) : (
-                <div className="text-sm text-gray-500 mb-3 text-center leading-loose">
-                    فایل را اینجا رها کنید<br/>
-                    <span className="text-xs opacity-70">یا برای انتخاب کلیک کنید</span>
-                </div>
-              )}
+                  
+                  <h3 className="text-sm font-bold text-gray-300 mb-1">
+                      {formData.isLocal || file ? 'فایل پیوست شد' : 'بارگذاری فایل PDF'}
+                  </h3>
+                  <p className="text-[10px] text-gray-500">
+                      {file ? file.name : (formData.isLocal ? 'فایل موجود است' : 'فایل را اینجا رها کنید')}
+                  </p>
+              </div>
 
-              <label className="cursor-pointer block w-full bg-white border border-cyan-300 text-cyan-700 py-3 px-3 rounded-lg text-center text-sm hover:bg-cyan-50 hover:border-cyan-400 transition-all shadow-sm">
-                {formData.isLocal || file ? 'جایگزینی فایل' : 'انتخاب فایل PDF'}
-                <input 
+              <input 
                   ref={fileInputRef}
                   type="file" 
                   accept=".pdf"
@@ -385,30 +387,34 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                     }
                   }}
                 />
-              </label>
             </div>
 
           </div>
         </div>
 
         {/* Footer */}
-        <div className="bg-gray-50 border-t border-gray-200 px-4 py-4 md:px-8 md:py-5 flex justify-between items-center shrink-0">
-          <div className="text-xs text-gray-400 font-sans hidden sm:block" dir="ltr">
-            {initialData ? `Record ID: ${initialData.id.substring(0,8)}...` : 'New Entry'}
+        <div className="bg-black/40 border-t border-white/5 px-8 py-5 flex justify-between items-center shrink-0 z-10">
+          <div className="text-[10px] text-gray-600 font-mono hidden sm:block">
+             ID: {initialData?.id.substring(0,8) || 'NEW_ENTRY'}
           </div>
           <div className="flex gap-4 w-full sm:w-auto justify-end">
              <button 
               onClick={onClose}
-              className="px-4 md:px-6 py-2.5 rounded-lg text-gray-600 hover:bg-gray-200 transition text-sm font-medium"
+              className="px-6 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition text-xs font-bold"
             >
               انصراف
             </button>
             <button 
               onClick={handleSave}
               disabled={isSaving}
-              className="bg-garden-dark text-white px-6 md:px-8 py-2.5 rounded-lg shadow hover:bg-tile-dark hover:shadow-lg transition-all text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+              className="bg-teal-glow/10 border border-teal-glow/50 text-teal-glow px-8 py-2 rounded-lg hover:bg-teal-glow hover:text-black hover:shadow-[0_0_20px_rgba(45,212,191,0.4)] transition-all text-xs font-bold disabled:opacity-50 flex items-center gap-2"
             >
-              {isSaving ? 'در حال پردازش...' : 'ذخیره در آرشیو'}
+              {isSaving ? (
+                <>
+                  <span className="animate-spin h-3 w-3 border-2 border-current border-b-transparent rounded-full"></span>
+                  {saveStatus}
+                </>
+              ) : 'ذخیره نهایی'}
             </button>
           </div>
         </div>

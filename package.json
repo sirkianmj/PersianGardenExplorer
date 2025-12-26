@@ -16,6 +16,7 @@
     "@tauri-apps/plugin-shell": "^2.0.0-rc.0",
     "@tauri-apps/plugin-fs": "^2.0.0-rc.0",
     "pdfjs-dist": "^4.0.379",
+    "flexsearch": "^0.7.31",
     "clsx": "^2.0.0",
     "tailwind-merge": "^1.14.0"
   },
@@ -23,6 +24,7 @@
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
     "@types/node": "^20.0.0",
+    "@types/flexsearch": "^0.7.3",
     "@vitejs/plugin-react": "^4.0.3",
     "typescript": "^5.0.2",
     "vite": "^4.4.5",

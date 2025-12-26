@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 import { View } from '../types';
 
@@ -18,148 +16,96 @@ const Sidebar: React.FC<SidebarProps> = ({
   onChangeView, 
   savedCount, 
   isOpen, 
-  onClose,
-  mode,
-  onToggleMode
+  onClose
 }) => {
   const navItems = [
-    { id: View.SEARCH, label: 'کاوش در منابع', icon: '🔍' },
-    { id: View.ATLAS, label: 'اطلس ایران', icon: '🗺️' },
-    { id: View.LIBRARY, label: 'کتابخانه من', icon: '📚', badge: savedCount },
-    { id: View.READER, label: 'سالن مطالعه', icon: '📖' },
+    { id: View.SEARCH, label: 'کاوشگر', icon: '🔍' },
+    { id: View.ATLAS, label: 'اطلس مکانی', icon: '🌍' },
+    { id: View.TIMELINE, label: 'کرونولوژی', icon: '⏳' },
+    { id: View.LIBRARY, label: 'آرشیو دیجیتال', icon: '📚', badge: savedCount },
+    { id: View.READER, label: 'میز مطالعه', icon: '📖' },
     { id: View.SETTINGS, label: 'تنظیمات', icon: '⚙️' },
   ];
 
-  const isCompact = mode === 'compact';
-
   return (
     <>
-      {/* Mobile Backdrop */}
+      {/* Mobile Overlay */}
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-30 md:hidden backdrop-blur-sm"
+          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm"
           onClick={onClose}
         />
       )}
 
-      {/* Sidebar Container */}
+      {/* Main Sidebar Container - Matches the slim left rail in the image */}
       <aside 
         className={`
-          fixed md:relative inset-y-0 right-0 z-40
-          bg-garden-dark bg-pattern-girih text-white 
-          flex flex-col shadow-2xl flex-shrink-0 
-          font-persian border-l-4 border-clay-accent 
-          transition-all duration-300 ease-in-out overflow-hidden pt-safe
+          fixed md:relative inset-y-0 right-0 md:right-auto md:left-0 z-50
+          w-64 md:w-24 lg:w-24 
+          flex flex-col items-center py-6
+          bg-[#0B0F12]/90 backdrop-blur-xl border-l md:border-l-0 md:border-r border-white/5
+          transition-transform duration-300 ease-out
           ${isOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
-          ${isCompact ? 'md:w-20' : 'md:w-72'}
-          w-72
         `}
       >
-        {/* Decorative gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-garden-dark/90 to-garden-dark/95 z-0 pointer-events-none"></div>
-
-        {/* Header */}
-        <div className={`
-            border-b border-white/10 z-10 relative flex flex-col items-center justify-center transition-all duration-300
-            ${isCompact ? 'p-4 h-24' : 'p-6 h-auto'}
-        `}>
-           {/* Mobile Close Button */}
-           <button 
-             onClick={onClose}
-             className="absolute top-4 left-4 text-white/50 hover:text-white md:hidden"
-           >
-             ✕
-           </button>
-
-          <div className={`
-              border-2 border-gold-accent/50 rounded-full flex items-center justify-center bg-white/5 backdrop-blur-sm shadow-inner transition-all duration-300
-              ${isCompact ? 'w-10 h-10 mb-0' : 'w-16 h-16 mb-3'}
-          `}>
-               <span className={`${isCompact ? 'text-xl' : 'text-3xl'} filter drop-shadow-lg`}>🌿</span>
-          </div>
-          
-          <div className={`text-center transition-opacity duration-300 ${isCompact ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
-            <h1 className="text-2xl text-white font-nastaliq nastaliq-h1 mb-0 drop-shadow-md text-gold-accent whitespace-nowrap">
-                کاوشگر باغ ایرانی
-            </h1>
-            <p className="text-[10px] text-tile-blue font-light tracking-widest mt-1 opacity-90 uppercase">
-                سامانه پژوهشی معماری و منظر
-            </p>
-          </div>
+        {/* Logo Area */}
+        <div className="mb-10 flex flex-col items-center justify-center">
+            <div className="w-12 h-12 rounded-xl border border-gold-primary/30 flex items-center justify-center bg-gold-primary/5 shadow-glow-gold relative rotate-45 mb-4">
+                <div className="w-8 h-8 border border-gold-primary/50 absolute inset-0 m-auto"></div>
+                <span className="-rotate-45 text-2xl text-gold-primary">❦</span>
+            </div>
         </div>
 
-        {/* Nav Items */}
-        <nav className="flex-1 overflow-y-auto py-4 z-10 px-3 overflow-x-hidden">
-          <ul className="space-y-2">
-            {navItems.map((item) => (
-              <li key={item.id}>
-                <button
-                  onClick={() => {
-                    onChangeView(item.id);
-                    onClose();
-                  }}
-                  title={isCompact ? item.label : ''}
-                  className={`w-full flex items-center rounded-lg transition-all duration-300 group relative
-                    ${isCompact ? 'justify-center px-0 py-3' : 'px-4 py-3'}
-                    ${currentView === item.id 
-                      ? 'bg-white/10 text-white font-bold shadow-lg border border-white/10 backdrop-blur-sm' 
-                      : 'text-gray-300 hover:bg-white/5 hover:text-white border border-transparent'
-                    }`}
-                >
-                  <span className={`
-                    text-lg transition-transform duration-300 flex-shrink-0
-                    ${currentView === item.id ? 'scale-110 text-tile-blue' : 'group-hover:text-tile-blue'}
-                    ${isCompact ? '' : 'ml-3'}
-                  `}>
-                      {item.icon}
-                  </span>
-                  
-                  <span className={`
-                    text-right whitespace-nowrap transition-all duration-300 origin-right
-                    ${isCompact ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100 flex-1'}
-                  `}>
-                      {item.label}
-                  </span>
+        {/* Navigation Items */}
+        <nav className="flex-1 w-full space-y-4 px-2">
+            {navItems.map((item) => {
+                const isActive = currentView === item.id;
+                return (
+                    <button
+                        key={item.id}
+                        onClick={() => { onChangeView(item.id); onClose(); }}
+                        className={`
+                            group w-full flex flex-col items-center justify-center py-3 relative rounded-xl transition-all duration-300
+                            ${isActive ? 'bg-white/5' : 'hover:bg-white/5'}
+                        `}
+                        title={item.label}
+                    >
+                        {/* Active Indicator Line (Golden Bar on the right/left) */}
+                        <div className={`
+                            absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1 bg-gold-primary rounded-r-full shadow-glow-gold transition-all duration-300
+                            ${isActive ? 'opacity-100' : 'opacity-0 h-0'}
+                        `}></div>
 
-                  {/* Badge */}
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <span className={`
-                        bg-clay-accent text-white text-[10px] rounded-full flex items-center justify-center shadow-sm absolute
-                        ${isCompact ? 'top-1 right-2 w-4 h-4 text-[9px]' : 'relative top-auto right-auto min-w-[20px] px-2 py-0.5'}
-                    `}>
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
+                        <div className={`
+                            text-2xl mb-1 transition-all duration-300 relative
+                            ${isActive ? 'text-gold-primary scale-110' : 'text-gray-500 group-hover:text-gray-300'}
+                        `}>
+                            {item.icon}
+                            {item.badge !== undefined && item.badge > 0 && (
+                                <span className="absolute -top-1 -right-2 bg-teal-glow text-black text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-glow-teal">
+                                    {item.badge}
+                                </span>
+                            )}
+                        </div>
+                        
+                        <span className={`
+                            text-[10px] font-medium transition-colors duration-300
+                            ${isActive ? 'text-text-primary' : 'text-gray-600 group-hover:text-gray-400'}
+                        `}>
+                            {item.label}
+                        </span>
+                    </button>
+                );
+            })}
         </nav>
 
-        {/* Footer / Toggle */}
-        <div className="p-4 border-t border-white/10 z-10 bg-black/10 flex flex-col items-center">
-            {/* Collapse Toggle for Desktop */}
-            <button 
-                onClick={onToggleMode}
-                className="hidden md:flex items-center justify-center w-full p-2 text-white/50 hover:text-white hover:bg-white/5 rounded transition mb-2 group"
-                title={isCompact ? "باز کردن منو" : "بستن منو"}
-            >
-                {isCompact ? (
-                    <span className="transform rotate-180">➜</span>
-                ) : (
-                    <div className="flex items-center gap-2">
-                        <span>➜</span>
-                        <span className="text-xs">جمع کردن منو</span>
-                    </div>
-                )}
-            </button>
-
-          <div className={`text-center p-3 rounded border border-white/5 bg-white/5 w-full transition-all duration-300 ${isCompact ? 'hidden' : 'block'}`}>
-              <p className="text-xs text-gold-accent/80 font-nastaliq leading-loose">
-                  «چو باغی که هر گوشه‌اش گلشن است»
-              </p>
-          </div>
+        {/* Bottom Status */}
+        <div className="mt-auto pt-4 flex flex-col items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-teal-glow/10 border border-teal-glow/30 flex items-center justify-center text-teal-glow text-xs shadow-glow-teal">
+                <span className="animate-pulse">●</span>
+            </div>
         </div>
+
       </aside>
     </>
   );

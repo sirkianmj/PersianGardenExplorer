@@ -1,11 +1,13 @@
 
+
 // Hybrid Storage Service: Web (IndexedDB) + Desktop (Tauri FS)
 import { Paper } from '../types';
 
 const DB_NAME = 'PardisScholarDB';
 const STORE_FILES = 'pdfs'; // Web only
 const STORE_PAPERS = 'papers'; // Metadata (Universal)
-const DB_VERSION = 2;
+const STORE_FULLTEXT = 'fullText'; // New: Extracted Text for Search
+const DB_VERSION = 3; // Incremented for Schema Change
 const TAURI_DIR_NAME = 'pardis-library';
 
 // Check if running in Tauri environment
@@ -32,6 +34,11 @@ export const initDB = (): Promise<IDBDatabase> => {
       if (!db.objectStoreNames.contains(STORE_PAPERS)) {
         const paperStore = db.createObjectStore(STORE_PAPERS, { keyPath: 'id' });
         paperStore.createIndex('addedAt', 'addedAt', { unique: false });
+      }
+
+      // Store for Extracted Full Text (For Search Indexing)
+      if (!db.objectStoreNames.contains(STORE_FULLTEXT)) {
+        db.createObjectStore(STORE_FULLTEXT, { keyPath: 'id' });
       }
     };
   });
@@ -74,15 +81,54 @@ export const deletePaperRecord = async (id: string): Promise<void> => {
         await deleteFileWeb(id);
     }
 
-    // 2. Delete Metadata (Universal)
+    // 2. Delete Metadata & Full Text (Universal)
     const db = await initDB();
     return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_PAPERS, 'readwrite');
-        const paperStore = tx.objectStore(STORE_PAPERS);
-        paperStore.delete(id);
+        const tx = db.transaction([STORE_PAPERS, STORE_FULLTEXT], 'readwrite');
+        
+        tx.objectStore(STORE_PAPERS).delete(id);
+        tx.objectStore(STORE_FULLTEXT).delete(id);
 
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
+    });
+};
+
+// --- Full Text Operations (For Search Engine) ---
+
+export const saveFullText = async (id: string, text: string): Promise<void> => {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_FULLTEXT, 'readwrite');
+    const store = tx.objectStore(STORE_FULLTEXT);
+    // We store an object { id: '...', text: '...' }
+    const request = store.put({ id, text });
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+export const getFullText = async (id: string): Promise<string> => {
+  const db = await initDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_FULLTEXT, 'readonly');
+    const store = tx.objectStore(STORE_FULLTEXT);
+    const request = store.get(id);
+    request.onsuccess = () => {
+        resolve(request.result?.text || "");
+    };
+    request.onerror = () => resolve("");
+  });
+};
+
+export const getAllFullTexts = async (): Promise<{id: string, text: string}[]> => {
+    const db = await initDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction(STORE_FULLTEXT, 'readonly');
+        const store = tx.objectStore(STORE_FULLTEXT);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => resolve([]);
     });
 };
 
@@ -90,6 +136,7 @@ export const deletePaperRecord = async (id: string): Promise<void> => {
 
 export const exportDatabase = async (): Promise<string> => {
     const papers = await getAllPapers();
+    // We do NOT backup full text to keep file size small. It can be re-indexed.
     const backup = {
         version: 1,
         timestamp: Date.now(),
@@ -108,7 +155,6 @@ export const importDatabase = async (jsonString: string): Promise<Paper[]> => {
         const store = tx.objectStore(STORE_PAPERS);
         
         for (const paper of data.library) {
-            // We preserve existing files if they exist, but update metadata
             store.put(paper);
         }
         

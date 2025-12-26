@@ -17,7 +17,7 @@ const CHICAGO_API = 'https://api.artic.edu/api/v1/artworks/search';
 const CHICAGO_IIIF = 'https://www.artic.edu/iiif/2';
 
 export const initializeGemini = (apiKey: string) => {
-  console.log("Initialized Academic Services");
+  console.log("Initialized Academic Services (Free Mode)");
 };
 
 export const isGeminiInitialized = (): boolean => {
@@ -440,207 +440,95 @@ const fetchChicagoArt = async (smartQuery: string): Promise<ArtWork[]> => {
     }
 };
 
-// 3. The Met Museum Fetcher (Existing Logic with Detail Fetching)
-const fetchMetArt = async (smartQuery: string): Promise<ArtWork[]> => {
+// 3. Met Museum Fetcher
+const fetchMetMuseum = async (smartQuery: string): Promise<ArtWork[]> => {
     try {
-        // Attempt High-Precision Search (Islamic Art)
-        const searchUrl = `${MET_MUSEUM_SEARCH}?q=${encodeURIComponent(smartQuery)}&hasImages=true&departmentId=14`;
-        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(searchUrl)}`;
+        const q = `${smartQuery} Persian`;
+        // Search first to get object IDs
+        const searchUrl = `${MET_MUSEUM_SEARCH}?q=${encodeURIComponent(q)}&hasImages=true`;
+        const proxySearch = `${CORS_PROXY}${encodeURIComponent(searchUrl)}`;
         
-        let searchRes = await fetch(proxyUrl);
-        let searchData;
-        try {
-            searchData = await searchRes.json();
-        } catch(e) {
-            searchData = { objectIDs: [] };
-        }
+        const searchRes = await fetch(proxySearch);
+        const searchJson = await searchRes.json();
         
-        let objectIDs = searchData.objectIDs || [];
+        if (!searchJson.objectIDs || searchJson.objectIDs.length === 0) return [];
 
-        // Fallback: Broader Search
-        if (objectIDs.length < 5) {
-             const broadUrl = `${MET_MUSEUM_SEARCH}?q=${encodeURIComponent(smartQuery + " Iran")}&hasImages=true`;
-             const broadProxy = `${CORS_PROXY}${encodeURIComponent(broadUrl)}`;
-             try {
-                 const broadRes = await fetch(broadProxy);
-                 const broadData = await broadRes.json();
-                 if (broadData.objectIDs) {
-                     objectIDs = [...objectIDs, ...broadData.objectIDs];
-                 }
-             } catch(e) {}
-        }
-
-        objectIDs = [...new Set(objectIDs)];
-        if (objectIDs.length === 0) return [];
-
-        const topIds = objectIDs.slice(0, 30); // Limit Met to 30 to balance with others
+        // Take top 8 results to avoid rate limits
+        const topIds = searchJson.objectIDs.slice(0, 8);
         
-        const artPromises = topIds.map(async (id: any) => {
+        // Fetch details in parallel
+        const artworks = await Promise.all(topIds.map(async (id: number) => {
             try {
                 const objUrl = `${MET_MUSEUM_OBJECT}/${id}`;
-                const objProxy = `${CORS_PROXY}${encodeURIComponent(objUrl)}`;
-                const objRes = await fetch(objProxy);
+                const proxyObj = `${CORS_PROXY}${encodeURIComponent(objUrl)}`;
+                const objRes = await fetch(proxyObj);
                 const obj = await objRes.json();
                 
                 if (!obj.primaryImageSmall) return null;
 
                 return {
-                    id: obj.objectID,
+                    id: `met-${obj.objectID}`,
                     title: obj.title,
-                    artist: obj.artistDisplayName || 'Unknown Artist',
-                    period: obj.period || obj.culture || 'Unknown Period',
-                    date: obj.objectDate || 'n.d.',
+                    artist: obj.artistDisplayName || 'Unknown',
+                    period: obj.period || obj.dynasty || 'Unknown',
+                    date: obj.objectDate || '',
                     imageUrl: obj.primaryImageSmall,
                     highResUrl: obj.primaryImage,
                     museumUrl: obj.objectURL,
-                    department: obj.department,
+                    department: 'Metropolitan Museum of Art',
                     medium: obj.medium || ''
                 } as ArtWork;
             } catch (e) {
                 return null;
             }
-        });
+        }));
 
-        const results = await Promise.all(artPromises);
-        return results.filter(Boolean) as ArtWork[];
+        return artworks.filter(Boolean) as ArtWork[];
+
     } catch (e) {
+        console.warn("Met Museum API Error", e);
         return [];
     }
 };
 
+export const searchAcademicPapers = async (query: string, period: HistoricalPeriod, topic: ResearchTopic): Promise<Partial<Paper>[]> => {
+  console.log(`Searching for: ${query}, Period: ${period}, Topic: ${topic}`);
 
-// Main Art Search Aggregator
-export const searchPersianArt = async (rawQuery: string): Promise<ArtWork[]> => {
-    let smartQuery = extractEnglishQuery(rawQuery);
-    
-    // Auto-translate if user typed Persian
-    if (smartQuery.length < 2) {
-            smartQuery = translateToEnglishArtTerm(rawQuery);
-    }
-
-    console.log(`Executing Visual Search (Multi-Source): [${smartQuery}]`);
-
-    // Fetch from all sources in parallel
-    const [metResults, clevelandResults, chicagoResults] = await Promise.all([
-        fetchMetArt(smartQuery),
-        fetchClevelandArt(smartQuery),
-        fetchChicagoArt(smartQuery)
-    ]);
-
-    const allResults = [...metResults, ...clevelandResults, ...chicagoResults];
-    const queryLower = smartQuery.toLowerCase();
-
-    // Unified Filtering Logic for Quality Control
-    const filtered = allResults.filter(art => {
-        const title = art.title.toLowerCase();
-        const medium = art.medium.toLowerCase();
-        const classification = (art as any).department ? (art as any).department.toLowerCase() : ""; // Met has dept
-
-        // 1. Is it a high-value category?
-        const isVisualArt = 
-            medium.includes("painting") || 
-            medium.includes("ink") ||
-            medium.includes("watercolor") ||
-            medium.includes("gold") ||
-            medium.includes("silver") ||
-            medium.includes("carpet") || 
-            medium.includes("silk") ||
-            medium.includes("ceramic") ||
-            medium.includes("tile") ||
-            title.includes("miniature") ||
-            title.includes("folio") ||
-            title.includes("shahnama");
-
-        // 2. Does Title match query?
-        const titleMatches = title.includes(queryLower);
-
-        // 3. Junk Filter
-        const isJunk = 
-            (title.includes("fragment") || title.includes("sherd") || title.includes("coin")) 
-            && !titleMatches;
-
-        return (isVisualArt || titleMatches) && !isJunk;
-    });
-
-    // Sort: Prioritize items that match the query in title
-    return filtered.sort((a, b) => {
-        const aMatch = a.title.toLowerCase().includes(queryLower);
-        const bMatch = b.title.toLowerCase().includes(queryLower);
-        if (aMatch && !bMatch) return -1;
-        if (!aMatch && bMatch) return 1;
-        return 0;
-    });
-};
-
-// --- Main Search Function ---
-
-export const searchAcademicPapers = async (
-  query: string,
-  period: HistoricalPeriod,
-  topic: ResearchTopic
-): Promise<Partial<Paper>[]> => {
-  
-  // Clean basic input
-  let searchString = query;
-
-  // Append period if selected (but keep it simple)
-  if (period && period !== HistoricalPeriod.ALL) {
-      let periodTerm = period.toString();
-      if (periodTerm.includes('&')) {
-          periodTerm = periodTerm.split('&')[0].trim();
-      }
-      // Add period to search string only if not already there
-      if (!searchString.includes(periodTerm)) {
-          searchString += ` ${periodTerm}`;
-      }
-  }
-  
-  console.log(`Executing Distributed Search: [${searchString}]`);
-  
-  const results = await Promise.allSettled([
-      fetchSID(searchString),          
-      fetchNoorMags(searchString),     
-      fetchGanjoor(searchString),      
-      fetchSemanticScholar(searchString), 
-      fetchCrossRef(searchString)         
+  // Parallel Execution of all Free Sources
+  const [semanticResults, crossrefResults, sidResults, noorResults, ganjoorResults] = await Promise.all([
+    fetchSemanticScholar(query),
+    fetchCrossRef(query),
+    fetchSID(query),
+    fetchNoorMags(query),
+    fetchGanjoor(query)
   ]);
 
-  let combined: Partial<Paper>[] = [];
-
-  results.forEach(result => {
-      if (result.status === 'fulfilled') {
-          combined = [...combined, ...result.value];
+  // Merge and Deduplicate (by Title roughly)
+  const all = [...sidResults, ...noorResults, ...ganjoorResults, ...semanticResults, ...crossrefResults];
+  const unique = new Map();
+  
+  all.forEach(p => {
+      const key = p.title?.toLowerCase().trim();
+      if (!unique.has(key)) {
+          unique.set(key, p);
       }
   });
 
-  // Post-processing: Deduplicate by title similarity or exact ID
-  const uniqueMap = new Map();
-  combined.forEach(p => {
-      // Basic normalization for dedupe
-      const normTitle = p.title?.toLowerCase().replace(/\s+/g, ' ').trim();
-      if(normTitle && !uniqueMap.has(normTitle)) {
-          uniqueMap.set(normTitle, p);
-      }
-  });
-
-  return Array.from(uniqueMap.values()).map(p => ({
-    ...p,
-    period: period !== HistoricalPeriod.ALL ? period : undefined,
-    topic: topic !== ResearchTopic.GENERAL ? topic : undefined,
-    tags: [],
-    notes: []
-  }));
+  return Array.from(unique.values());
 };
 
-export const extractMetadataFromText = async (textSnippet: string): Promise<Partial<Paper>> => {
-  return {
-    title: "Imported Document",
-    authors: ["Unknown Author"],
-    year: new Date().getFullYear().toString(),
-    abstract: "Metadata extraction requires manual entry for local files.",
-    period: undefined,
-    topic: undefined,
-    language: isPersian(textSnippet) ? 'fa' : 'en',
-    apiSource: 'Local'
-  };
+export const searchPersianArt = async (query: string): Promise<ArtWork[]> => {
+    console.log(`Searching Art for: ${query}`);
+    
+    // Convert Persian query to English terms for International Museums
+    const englishQuery = isPersian(query) ? translateToEnglishArtTerm(query) : query;
+    
+    // Parallel fetch from museums
+    const [cleveland, chicago, met] = await Promise.all([
+        fetchClevelandArt(englishQuery),
+        fetchChicagoArt(englishQuery),
+        fetchMetMuseum(englishQuery)
+    ]);
+    
+    return [...met, ...cleveland, ...chicago];
 };
