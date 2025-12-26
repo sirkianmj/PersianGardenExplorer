@@ -209,7 +209,7 @@ export const getPdfDisplayUrl = async (id: string): Promise<string | null> => {
             const filePath = await getTauriFilePath(id);
             const fs = window.__TAURI__!.fs;
             if (await fs.exists(filePath)) {
-                // Tauri v2 (Android/iOS) puts convertFileSrc in 'core'
+                // Tauri v2 check (optional chaining used to fix TS2774)
                 if (window.__TAURI__?.core?.convertFileSrc) {
                      return window.__TAURI__.core.convertFileSrc(filePath);
                 }
@@ -242,6 +242,50 @@ export const getPdfDisplayUrl = async (id: string): Promise<string | null> => {
             request.onerror = () => resolve(null);
         });
     }
+};
+
+/**
+ * Retrieves the raw PDF data as a Uint8Array.
+ * This is more robust for PDF.js than Blob URLs, especially on Vercel/Web.
+ */
+export const getPdfData = async (id: string): Promise<Uint8Array | null> => {
+  if (isTauri()) {
+     try {
+        const fs = window.__TAURI__!.fs;
+        const filePath = await getTauriFilePath(id);
+        if (await fs.exists(filePath)) {
+            return await fs.readBinaryFile(filePath);
+        }
+        return null;
+     } catch (e) {
+        console.error("Tauri read error", e);
+        return null;
+     }
+  } else {
+    // Web Mode (IndexedDB)
+    const db = await initDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction(STORE_FILES, 'readonly');
+        const store = tx.objectStore(STORE_FILES);
+        const request = store.get(id);
+        request.onsuccess = async () => {
+            if (request.result) {
+                try {
+                    // request.result is a Blob or File
+                    const blob = request.result as Blob;
+                    const buffer = await blob.arrayBuffer();
+                    resolve(new Uint8Array(buffer));
+                } catch(e) {
+                    console.error("Error reading blob buffer", e);
+                    resolve(null);
+                }
+            } else {
+                resolve(null);
+            }
+        };
+        request.onerror = () => resolve(null);
+    });
+  }
 };
 
 export const openExternalLink = async (url: string) => {

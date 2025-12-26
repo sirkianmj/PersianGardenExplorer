@@ -1,8 +1,7 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Paper, Note } from '../types';
-import { getPdfDisplayUrl, openExternalLink } from '../services/storageService';
+import { getPdfData, openExternalLink } from '../services/storageService';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Initialize PDF.js worker
@@ -57,61 +56,62 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
       setPdfDoc(null);
 
       try {
-        let url = paper.url;
-
-        // If local, use the storage service to get the correct URL format
-        // Web: blob:..., Tauri: asset://...
-        if (paper.isLocal) {
-          console.log(`Attempting to load local file: ${paper.id}`);
-          const localUrl = await getPdfDisplayUrl(paper.id);
-          if (localUrl) {
-            url = localUrl;
-            console.log("Local Blob URL generated successfully.");
-          } else {
-            console.error("Failed to generate local URL for ID:", paper.id);
-            throw new Error("Local file not found in database.");
-          }
-        }
-
-        if (!url) {
-          setIsLoading(false);
-          return;
-        }
-
         // Configuration for PDF.js
         const baseParams = {
             cMapUrl: 'https://unpkg.com/pdfjs-dist@4.0.379/cmaps/',
             cMapPacked: true,
         };
 
+        let loadingTask;
+
+        // Strategy: Use Raw Data for Local Files, URL for Remote
+        if (paper.isLocal) {
+          console.log(`Attempting to load local file data: ${paper.id}`);
+          const pdfData = await getPdfData(paper.id);
+          
+          if (pdfData) {
+            console.log("Local Data retrieved successfully. Size:", pdfData.length);
+            loadingTask = pdfjsLib.getDocument({ ...baseParams, data: pdfData });
+          } else {
+            console.error("Failed to retrieve local data for ID:", paper.id);
+            throw new Error("Local file data not found in database.");
+          }
+        } else {
+           // Remote URL Handling
+           const url = paper.url;
+           if (!url) {
+             setIsLoading(false);
+             return;
+           }
+           // Try direct URL first
+           loadingTask = pdfjsLib.getDocument({ ...baseParams, url: url });
+        }
+
+        // Execute Loading
         try {
-            // Attempt 1: Direct Load
-            const loadingTask = pdfjsLib.getDocument({ ...baseParams, url: url });
             const doc = await loadingTask.promise;
             setPdfDoc(doc);
             setNumPages(doc.numPages);
             setIsLoading(false);
-        } catch (directError: any) {
-            console.warn("Direct load failed.", directError);
-
-            if (paper.isLocal) {
-                 // If local file failed, it's likely a format issue or corrupt blob, not CORS
-                 throw new Error("Failed to load local PDF file.");
-            }
-
-            // Attempt 2: Load via CORS Proxy (Only for remote URLs)
-            try {
-                console.log("Attempting proxy load...");
-                const proxyUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
-                const proxyTask = pdfjsLib.getDocument({ ...baseParams, url: proxyUrl });
-                const doc = await proxyTask.promise;
-                setPdfDoc(doc);
-                setNumPages(doc.numPages);
-                setIsLoading(false);
-            } catch (proxyError: any) {
-                console.error("Proxy load failed:", proxyError);
-                throw new Error("Unable to load PDF via direct link or proxy.");
-            }
+        } catch (loadError: any) {
+             console.warn("Primary load failed.", loadError);
+             
+             // Retry with CORS Proxy if it's a REMOTE file
+             if (!paper.isLocal && paper.url) {
+                try {
+                    console.log("Attempting proxy load...");
+                    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(paper.url)}`;
+                    const proxyTask = pdfjsLib.getDocument({ ...baseParams, url: proxyUrl });
+                    const doc = await proxyTask.promise;
+                    setPdfDoc(doc);
+                    setNumPages(doc.numPages);
+                    setIsLoading(false);
+                } catch (proxyError) {
+                    throw new Error("Unable to load remote PDF via proxy.");
+                }
+             } else {
+                 throw loadError;
+             }
         }
 
       } catch (err: any) {
