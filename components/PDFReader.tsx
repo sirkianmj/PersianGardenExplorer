@@ -5,9 +5,9 @@ import { Paper, Note } from '../types';
 import { getPdfData, openExternalLink } from '../services/storageService';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// CRITICAL FIX: Load worker via CDN matching package.json version (4.0.379)
-// This avoids complex bundling issues and "Invalid URL" errors with 'import.meta.url'
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
+// CRITICAL FIX: Dynamically set worker version to match the installed library version.
+// This prevents "API version does not match Worker version" errors if npm installs a patch update.
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 const CORS_PROXY = 'https://corsproxy.io/?';
 
@@ -61,7 +61,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
         // For viewing, usually optional.
         const baseParams = {
              // We can point to a CDN for CMaps if text selection is buggy, but for rendering it's optional
-            cMapUrl: 'https://unpkg.com/pdfjs-dist@4.0.379/cmaps/',
+            cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
             cMapPacked: true,
         };
 
