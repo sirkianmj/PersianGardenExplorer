@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Paper, Note } from '../types';
 import { getPdfDisplayUrl, openExternalLink } from '../services/storageService';
@@ -362,7 +363,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose }) =
 
         <div className="p-4 border-t border-gray-200 bg-gray-50">
             <textarea
-                className="w-full border border-gray-300 rounded p-3 text-sm focus:ring-2 focus:ring-garden-dark focus:border-transparent outline-none resize-none shadow-sm"
+                className="w-full border border-gray-300 rounded p-3 text-base md:text-sm focus:ring-2 focus:ring-garden-dark focus:border-transparent outline-none resize-none shadow-sm"
                 rows={3}
                 placeholder="یادداشت خود را بنویسید..."
                 value={newNote}

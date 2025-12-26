@@ -1,3 +1,5 @@
+
+
 import React from 'react';
 import { View } from '../types';
 
@@ -47,7 +49,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           bg-garden-dark bg-pattern-girih text-white 
           flex flex-col shadow-2xl flex-shrink-0 
           font-persian border-l-4 border-clay-accent 
-          transition-all duration-300 ease-in-out overflow-hidden
+          transition-all duration-300 ease-in-out overflow-hidden pt-safe
           ${isOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
           ${isCompact ? 'md:w-20' : 'md:w-72'}
           w-72

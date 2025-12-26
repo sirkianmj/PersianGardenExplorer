@@ -394,8 +394,8 @@ const App: React.FC = () => {
 
       <main className="flex-1 flex flex-col overflow-hidden relative z-10 w-full transition-all duration-300">
         
-        {/* Mobile Header */}
-        <div className="md:hidden h-14 bg-garden-dark text-white flex items-center px-4 justify-between shrink-0 shadow-md">
+        {/* Mobile Header with Safe Area Padding */}
+        <div className="md:hidden bg-garden-dark text-white flex items-center px-4 py-3 pt-safe justify-between shrink-0 shadow-md">
             <button onClick={() => setIsSidebarOpen(true)} className="p-1">
                 <MenuIcon />
             </button>
@@ -424,7 +424,7 @@ const App: React.FC = () => {
                                     value={filters.query}
                                     onChange={e => setFilters({...filters, query: e.target.value})}
                                     placeholder="جستجوی موضوعی (مثلاً: باغ فین)"
-                                    className="w-full py-3 pr-12 pl-4 border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-tile-blue shadow-inner bg-gray-50 focus:bg-white transition-all duration-300 text-sm md:text-base selectable-text"
+                                    className="w-full py-3 pr-12 pl-4 border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-tile-blue shadow-inner bg-gray-50 focus:bg-white transition-all duration-300 text-base md:text-sm selectable-text"
                                 />
                             </div>
                             <button 
@@ -440,7 +440,7 @@ const App: React.FC = () => {
                             <select 
                                 value={filters.period}
                                 onChange={e => setFilters({...filters, period: e.target.value as HistoricalPeriod})}
-                                className="border border-gray-300 rounded px-4 py-2 text-sm text-gray-700 bg-white focus:border-tile-blue focus:ring-0 w-full"
+                                className="border border-gray-300 rounded px-4 py-2 text-base md:text-sm text-gray-700 bg-white focus:border-tile-blue focus:ring-0 w-full"
                             >
                                 {Object.values(HistoricalPeriod).map(p => (
                                     <option key={p} value={p}>{PERIOD_LABELS[p]}</option>
@@ -450,7 +450,7 @@ const App: React.FC = () => {
                             <select 
                                 value={filters.topic}
                                 onChange={e => setFilters({...filters, topic: e.target.value as ResearchTopic})}
-                                className="border border-gray-300 rounded px-4 py-2 text-sm text-gray-700 bg-white focus:border-tile-blue focus:ring-0 w-full"
+                                className="border border-gray-300 rounded px-4 py-2 text-base md:text-sm text-gray-700 bg-white focus:border-tile-blue focus:ring-0 w-full"
                             >
                                 {Object.values(ResearchTopic).map(t => (
                                     <option key={t} value={t}>{TOPIC_LABELS[t]}</option>
@@ -685,7 +685,7 @@ const App: React.FC = () => {
                             value={librarySearchQuery}
                             onChange={(e) => setLibrarySearchQuery(e.target.value)}
                             placeholder="جستجو در کتابخانه (عنوان، نویسنده، متن، برچسب...)"
-                            className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-tile-blue focus:ring-1 focus:ring-tile-blue transition-all text-sm selectable-text"
+                            className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-tile-blue focus:ring-1 focus:ring-tile-blue transition-all text-base md:text-sm selectable-text"
                         />
                          {librarySearchQuery && (
                             <button 

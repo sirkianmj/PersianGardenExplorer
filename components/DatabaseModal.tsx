@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Paper, HistoricalPeriod, ResearchTopic } from '../types';
@@ -225,7 +227,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                 type="text"
                 value={formData.title}
                 onChange={e => setFormData({...formData, title: e.target.value})}
-                className={`w-full border p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent transition-shadow ${errors.title ? 'border-red-500' : 'border-gray-300'}`}
+                className={`w-full border p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent transition-shadow ${errors.title ? 'border-red-500' : 'border-gray-300'} text-base md:text-sm`}
                 placeholder="عنوان کامل اثر را وارد کنید..."
               />
               {errors.title && <span className="text-red-500 text-xs mt-1 block">{errors.title}</span>}
@@ -238,7 +240,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                   type="text"
                   value={authorInput}
                   onChange={e => setAuthorInput(e.target.value)}
-                  className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent transition-shadow"
+                  className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent transition-shadow text-base md:text-sm"
                   placeholder="مثال: پیرنیا، محمدکریم؛ پوپ، آرتور"
                 />
               </div>
@@ -249,7 +251,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                       type="text"
                       value={formData.year}
                       onChange={e => setFormData({...formData, year: e.target.value})}
-                      className={`w-full border p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent font-sans text-left ${errors.year ? 'border-red-500' : 'border-gray-300'}`}
+                      className={`w-full border p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent font-sans text-left ${errors.year ? 'border-red-500' : 'border-gray-300'} text-base md:text-sm`}
                       placeholder="YYYY"
                       dir="ltr"
                     />
@@ -259,7 +261,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                     <select 
                       value={formData.language}
                       onChange={e => setFormData({...formData, language: e.target.value as 'en' | 'fa'})}
-                      className="w-full border border-gray-300 p-3 rounded-lg bg-white"
+                      className="w-full border border-gray-300 p-3 rounded-lg bg-white text-base md:text-sm"
                     >
                       <option value="fa">فارسی</option>
                       <option value="en">انگلیسی</option>
@@ -274,7 +276,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                 rows={6}
                 value={formData.abstract}
                 onChange={e => setFormData({...formData, abstract: e.target.value})}
-                className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent text-sm leading-relaxed"
+                className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-tile-blue focus:border-transparent text-base md:text-sm leading-relaxed"
                 placeholder="متن چکیده را اینجا وارد کنید..."
               />
             </div>
@@ -295,7 +297,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                       type="text"
                       value={formData.source}
                       onChange={e => setFormData({...formData, source: e.target.value})}
-                      className="w-full border border-gray-300 p-2.5 rounded text-sm focus:border-tile-blue focus:ring-0"
+                      className="w-full border border-gray-300 p-2.5 rounded text-base md:text-sm focus:border-tile-blue focus:ring-0"
                       placeholder="مثال: مجله باغ نظر"
                     />
                 </div>
@@ -305,7 +307,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                    <select 
                       value={formData.period}
                       onChange={e => setFormData({...formData, period: e.target.value as HistoricalPeriod})}
-                      className="w-full border border-gray-300 p-2.5 rounded text-sm bg-white focus:border-tile-blue focus:ring-0"
+                      className="w-full border border-gray-300 p-2.5 rounded text-base md:text-sm bg-white focus:border-tile-blue focus:ring-0"
                     >
                       {Object.values(HistoricalPeriod).map(p => (
                           <option key={p} value={p}>{PERIOD_LABELS[p]}</option>
@@ -318,7 +320,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                    <select 
                       value={formData.topic}
                       onChange={e => setFormData({...formData, topic: e.target.value as ResearchTopic})}
-                      className="w-full border border-gray-300 p-2.5 rounded text-sm bg-white focus:border-tile-blue focus:ring-0"
+                      className="w-full border border-gray-300 p-2.5 rounded text-base md:text-sm bg-white focus:border-tile-blue focus:ring-0"
                     >
                       {Object.values(ResearchTopic).map(t => (
                           <option key={t} value={t}>{TOPIC_LABELS[t]}</option>
@@ -332,7 +334,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onSave, 
                       type="text"
                       value={formData.citationKey}
                       onChange={e => setFormData({...formData, citationKey: e.target.value})}
-                      className="w-full border border-gray-300 p-2.5 rounded text-sm font-mono text-gray-600 text-left bg-gray-50"
+                      className="w-full border border-gray-300 p-2.5 rounded text-base md:text-sm font-mono text-gray-600 text-left bg-gray-50"
                       placeholder="Auto-gen"
                       dir="ltr"
                     />
