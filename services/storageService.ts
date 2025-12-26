@@ -210,12 +210,12 @@ export const getPdfDisplayUrl = async (id: string): Promise<string | null> => {
             const fs = window.__TAURI__!.fs;
             if (await fs.exists(filePath)) {
                 // Tauri v2 (Android/iOS) puts convertFileSrc in 'core'
-                if (window.__TAURI__!.core && window.__TAURI__!.core.convertFileSrc) {
-                     return window.__TAURI__!.core.convertFileSrc(filePath);
+                if (window.__TAURI__?.core?.convertFileSrc) {
+                     return window.__TAURI__.core.convertFileSrc(filePath);
                 }
                 // Tauri v1 fallback
-                if (window.__TAURI__!.tauri && window.__TAURI__!.tauri.convertFileSrc) {
-                     return window.__TAURI__!.tauri.convertFileSrc(filePath);
+                if (window.__TAURI__?.tauri?.convertFileSrc) {
+                     return window.__TAURI__.tauri.convertFileSrc(filePath);
                 }
                 console.error("Tauri convertFileSrc not found");
                 return null;

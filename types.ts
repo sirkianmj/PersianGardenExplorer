@@ -122,11 +122,11 @@ declare global {
     __TAURI__?: {
       // Tauri v1 style
       tauri?: {
-        convertFileSrc: (filePath: string, protocol?: string) => string;
+        convertFileSrc?: (filePath: string, protocol?: string) => string;
       };
       // Tauri v2 style
       core?: {
-        convertFileSrc: (filePath: string, protocol?: string) => string;
+        convertFileSrc?: (filePath: string, protocol?: string) => string;
         invoke: (cmd: string, args?: any) => Promise<any>;
       };
       fs: {
