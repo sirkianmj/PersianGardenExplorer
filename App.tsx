@@ -1,4 +1,5 @@
 
+
 // Developed by Kian Mansouri Jamshidi
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
@@ -377,7 +378,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-paper-bg font-persian relative overflow-hidden">
+    <div className="flex h-[100dvh] bg-paper-bg font-persian relative overflow-hidden">
       {/* Background Texture */}
       <div className="absolute inset-0 bg-pattern-girih opacity-[0.03] pointer-events-none z-0"></div>
 
@@ -423,7 +424,7 @@ const App: React.FC = () => {
                                     value={filters.query}
                                     onChange={e => setFilters({...filters, query: e.target.value})}
                                     placeholder="جستجوی موضوعی (مثلاً: باغ فین)"
-                                    className="w-full py-3 pr-12 pl-4 border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-tile-blue shadow-inner bg-gray-50 focus:bg-white transition-all duration-300 text-sm md:text-base"
+                                    className="w-full py-3 pr-12 pl-4 border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-tile-blue shadow-inner bg-gray-50 focus:bg-white transition-all duration-300 text-sm md:text-base selectable-text"
                                 />
                             </div>
                             <button 
@@ -490,7 +491,7 @@ const App: React.FC = () => {
                                         {/* Decorative Corner */}
                                         <div className="absolute top-0 right-0 w-8 h-8 bg-gradient-to-bl from-[#e8dfc4] to-transparent"></div>
                                         
-                                        <p className="font-serif text-lg leading-relaxed text-gray-800 italic mb-3">
+                                        <p className="font-serif text-lg leading-relaxed text-gray-800 italic mb-3 selectable-text">
                                             "{chunk.excerpt}"
                                         </p>
                                         <div className="flex flex-wrap items-center justify-between text-sm text-gray-600 font-sans border-t border-[#e8dfc4] pt-3 mt-2">
@@ -541,7 +542,7 @@ const App: React.FC = () => {
                                                 )}
                                             </div>
                                             <h3 
-                                                className="text-lg md:text-xl text-garden-dark font-bold cursor-pointer hover:text-tile-blue transition-colors leading-relaxed font-sans"
+                                                className="text-lg md:text-xl text-garden-dark font-bold cursor-pointer hover:text-tile-blue transition-colors leading-relaxed font-sans selectable-text"
                                                 onClick={() => handleQuickAdd(result)}
                                             >
                                                 {result.title}
@@ -571,7 +572,7 @@ const App: React.FC = () => {
                                             </button>
                                         </div>
                                     </div>
-                                    <p className="text-gray-600 mt-3 text-sm leading-relaxed text-justify border-t border-gray-50 pt-3 hidden sm:block">
+                                    <p className="text-gray-600 mt-3 text-sm leading-relaxed text-justify border-t border-gray-50 pt-3 hidden sm:block selectable-text">
                                         {result.abstract}
                                     </p>
                                 </div>
@@ -608,7 +609,7 @@ const App: React.FC = () => {
                                          </div>
                                      </div>
                                      <div className="p-4">
-                                         <h4 className="font-bold text-gray-800 text-sm mb-1 leading-snug">{art.title}</h4>
+                                         <h4 className="font-bold text-gray-800 text-sm mb-1 leading-snug selectable-text">{art.title}</h4>
                                          <p className="text-xs text-clay-accent font-medium mb-2">{art.artist}</p>
                                          <div className="flex flex-wrap gap-2 text-[10px] text-gray-500 font-sans border-t border-gray-100 pt-2">
                                              <span className="bg-gray-50 px-2 py-0.5 rounded">{art.date}</span>
@@ -684,7 +685,7 @@ const App: React.FC = () => {
                             value={librarySearchQuery}
                             onChange={(e) => setLibrarySearchQuery(e.target.value)}
                             placeholder="جستجو در کتابخانه (عنوان، نویسنده، متن، برچسب...)"
-                            className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-tile-blue focus:ring-1 focus:ring-tile-blue transition-all text-sm"
+                            className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:bg-white focus:border-tile-blue focus:ring-1 focus:ring-tile-blue transition-all text-sm selectable-text"
                         />
                          {librarySearchQuery && (
                             <button 
@@ -938,7 +939,7 @@ const App: React.FC = () => {
                         <button onClick={() => setSelectedTravelogue(null)} className="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
                     </div>
                     <div className="p-8 overflow-y-auto font-serif text-lg leading-loose text-gray-800">
-                        <p className="first-letter:text-4xl first-letter:font-bold first-letter:float-left first-letter:mr-2 first-letter:mt-[-5px]">
+                        <p className="first-letter:text-4xl first-letter:font-bold first-letter:float-left first-letter:mr-2 first-letter:mt-[-5px] selectable-text">
                             {selectedTravelogue.text}
                         </p>
                         <div className="mt-8 pt-4 border-t border-gray-300 text-sm font-sans text-gray-500 flex justify-between items-center">

@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>کاوشگر باغ ایرانی</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -52,13 +52,23 @@
         background: #9ca3af;
       }
       
+      /* App-like feel: Disable text selection on UI elements */
+      body {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      
+      /* Allow text selection only in readable areas */
+      .prose, .selectable-text, input, textarea {
+        -webkit-user-select: text;
+        user-select: text;
+      }
+
       /* Persian Arch shape utility */
       .persian-arch {
          border-radius: 1rem 1rem 0 0;
-         /* Subtle Ogee curve hint */
          clip-path: polygon(0 0, 50% 10%, 100% 0, 100% 100%, 0 100%); 
-         /* Since clip-path cuts shadows, we often just use border-radius for clean UI, 
-            but let's stick to a nice top-rounding with a border accent. */
       }
       
       .nastaliq-h1 {
@@ -79,7 +89,7 @@
 }
 </script>
 </head>
-  <body class="bg-gray-50 text-ink-black font-sans antialiased h-screen overflow-hidden">
+  <body class="bg-gray-50 text-ink-black font-sans antialiased h-screen overflow-hidden overscroll-none">
     <div id="root"></div>
   </body>
 </html>

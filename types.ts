@@ -116,11 +116,18 @@ export interface AppSettings {
 }
 
 // --- Tauri Global Augmentation ---
+// Updated to support Tauri v2 (Android/iOS) structure which moves some APIs to 'core'
 declare global {
   interface Window {
     __TAURI__?: {
-      tauri: {
+      // Tauri v1 style
+      tauri?: {
         convertFileSrc: (filePath: string, protocol?: string) => string;
+      };
+      // Tauri v2 style
+      core?: {
+        convertFileSrc: (filePath: string, protocol?: string) => string;
+        invoke: (cmd: string, args?: any) => Promise<any>;
       };
       fs: {
         writeBinaryFile: (path: string, data: Uint8Array, options?: any) => Promise<void>;

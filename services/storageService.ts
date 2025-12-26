@@ -209,9 +209,16 @@ export const getPdfDisplayUrl = async (id: string): Promise<string | null> => {
             const filePath = await getTauriFilePath(id);
             const fs = window.__TAURI__!.fs;
             if (await fs.exists(filePath)) {
-                // Use Tauri's utility to create a safe asset URL
-                // Updated to use the correct 'tauri' namespace for convertFileSrc
-                return window.__TAURI__!.tauri.convertFileSrc(filePath);
+                // Tauri v2 (Android/iOS) puts convertFileSrc in 'core'
+                if (window.__TAURI__!.core && window.__TAURI__!.core.convertFileSrc) {
+                     return window.__TAURI__!.core.convertFileSrc(filePath);
+                }
+                // Tauri v1 fallback
+                if (window.__TAURI__!.tauri && window.__TAURI__!.tauri.convertFileSrc) {
+                     return window.__TAURI__!.tauri.convertFileSrc(filePath);
+                }
+                console.error("Tauri convertFileSrc not found");
+                return null;
             }
             return null;
         } catch (e) {
