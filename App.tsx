@@ -518,7 +518,7 @@ const App: React.FC = () => {
 
                              <div className="flex flex-col items-center">
                                  <span className="text-[10px] text-gray-500 mb-1 uppercase tracking-wider">استاد راهنما</span>
-                                 <span className="text-base text-teal-glow font-bold">دکتر جیحانی</span>
+                                 <span className="text-base text-teal-glow font-bold">دکتر حمیدرضا جیحانی</span>
                              </div>
 
                              <div className="w-1/2 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mx-auto my-4"></div>
