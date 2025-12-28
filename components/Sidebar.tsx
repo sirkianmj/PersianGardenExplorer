@@ -24,7 +24,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: View.SEARCH, label: 'کاوشگر', icon: '🔍' },
     { id: View.ATLAS, label: 'اطلس مکانی', icon: '🌍' },
     { id: View.TIMELINE, label: 'کرونولوژی', icon: '⏳' },
-    { id: View.LIBRARY, label: 'آرشیو دیجیتال', icon: '📚', badge: savedCount },
+    { id: View.LIBRARY, label: 'کتابخانه دیجیتال', icon: '📚', badge: savedCount },
     { id: View.SETTINGS, label: 'تنظیمات', icon: '⚙️' },
   ];
 

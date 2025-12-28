@@ -322,7 +322,7 @@ const App: React.FC = () => {
                     <h2 className="text-lg md:text-xl font-nastaliq text-gold-primary drop-shadow-md pt-1.5 md:pt-2">
                         {currentView === View.SEARCH && 'کاوشگر منابع'}
                         {currentView === View.ATLAS && 'اطلس مکانی'}
-                        {currentView === View.LIBRARY && 'آرشیو دیجیتال'}
+                        {currentView === View.LIBRARY && 'کتابخانه دیجیتال'}
                         {currentView === View.TIMELINE && 'خط زمان'}
                         {currentView === View.SETTINGS && 'تنظیمات'}
                     </h2>
