@@ -2,36 +2,85 @@
 import { TravelogueChunk } from '../types';
 
 // --- GAZETTEER: Place Name Normalization ---
-// Maps historical/alt spellings to a canonical ID or Name
+// Maps historical/alt spellings (English & Persian) to a canonical ID or Name
 const PLACE_ALIASES: Record<string, string> = {
     // Tehran
-    'tehran': 'Tehran', 'teheran': 'Tehran', 'tihran': 'Tehran',
+    'tehran': 'Tehran', 'teheran': 'Tehran', 'tihran': 'Tehran', 
+    'تهران': 'Tehran', 'طهران': 'Tehran', 'golestan': 'Tehran', 'گلستان': 'Tehran',
+    
     // Isfahan
     'isfahan': 'Isfahan', 'ispahan': 'Isfahan', 'spahawn': 'Isfahan', 'esfahan': 'Isfahan', 'sepahan': 'Isfahan',
+    'اصفهان': 'Isfahan', 'سپاهان': 'Isfahan', 'naqsh-e jahan': 'Isfahan', 'نقش جهان': 'Isfahan',
+    
     // Shiraz
     'shiraz': 'Shiraz', 'shirauz': 'Shiraz', 'schiraz': 'Shiraz',
+    'شیراز': 'Shiraz', 'hafiz': 'Shiraz', 'حافظ': 'Shiraz', 'sa\'di': 'Shiraz', 'سعدی': 'Shiraz',
+    
     // Yazd
     'yazd': 'Yazd', 'yezd': 'Yazd', 'yesd': 'Yazd',
+    'یزد': 'Yazd', 'badgir': 'Yazd', 'بادگیر': 'Yazd',
+    
     // Tabriz
     'tabriz': 'Tabriz', 'tauris': 'Tabriz', 'tebris': 'Tabriz',
+    'تبریز': 'Tabriz',
+    
     // Kashan
     'kashan': 'Kashan', 'cashan': 'Kashan', 'cachan': 'Kashan',
+    'کاشان': 'Kashan', 'fin garden': 'Kashan', 'bagh-e fin': 'Kashan', 'باغ فین': 'Kashan',
+    
     // Persepolis
     'persepolis': 'Persepolis', 'takht-e jamshid': 'Persepolis', 'chilminar': 'Persepolis',
+    'تخت جمشید': 'Persepolis', 'پرسپولیس': 'Persepolis',
+    
     // Qazvin
     'qazvin': 'Qazvin', 'casbin': 'Qazvin', 'kazvin': 'Qazvin',
+    'قزوین': 'Qazvin',
+    
     // Mashhad
     'mashhad': 'Mashhad', 'meshed': 'Mashhad',
+    'مشهد': 'Mashhad',
+    
     // Kerman
     'kerman': 'Kerman', 'kirman': 'Kerman',
+    'کرمان': 'Kerman',
+    
     // Ray
-    'ray': 'Ray', 'rhages': 'Ray', 'rey': 'Ray'
+    'ray': 'Ray', 'rhages': 'Ray', 'rey': 'Ray',
+    'ری': 'Ray', 'راگا': 'Ray',
+    
+    // Khuzestan / Susa
+    'khuzestan': 'Khuzestan', 'khuzistan': 'Khuzestan',
+    'خوزستان': 'Khuzestan', 'susa': 'Khuzestan', 'shush': 'Khuzestan', 'شوش': 'Khuzestan'
+};
+
+// --- KEYWORD DICTIONARY: Persian to English ---
+// Enables semantic search of English texts using Persian terms
+const PERSIAN_KEYWORDS: Record<string, string> = {
+    'باغ': 'garden',
+    'پردیس': 'paradise',
+    'درخت': 'tree',
+    'آب': 'water',
+    'عمارت': 'palace',
+    'کاخ': 'palace',
+    'کوشک': 'pavilion',
+    'شاه': 'shah',
+    'صفوی': 'safavid',
+    'قاجار': 'qajar',
+    'بازار': 'bazaar',
+    'مسجد': 'mosque',
+    'کاشی': 'tile',
+    'فرش': 'carpet',
+    'سرو': 'cypress',
+    'چنار': 'plane tree',
+    'بیابان': 'desert',
+    'کویر': 'desert',
+    'قنات': 'qanat',
+    'آینه': 'mirror',
+    'چهارباغ': 'chahar', // matches chahar bagh
+    'معماری': 'architecture'
 };
 
 // --- MOCK DATABASE: Public Domain Travelogues ---
-// Simulating the result of an ingestion pipeline from Project Gutenberg/Internet Archive.
-// Excerpts selected for architectural and landscape relevance.
-
 const TRAVELOGUE_DB: TravelogueChunk[] = [
     {
         id: 'chardin-isfahan-1',
@@ -150,7 +199,8 @@ const TRAVELOGUE_DB: TravelogueChunk[] = [
 /**
  * Searches the historical travelogues database.
  * 1. Normalizes the query using the Gazetteer (NER/Aliasing).
- * 2. Filters the chunks based on location match or text content.
+ * 2. Translates Persian keywords to English for semantic matching.
+ * 3. Filters the chunks based on location match or text content.
  */
 export const searchTravelogues = async (query: string): Promise<TravelogueChunk[]> => {
     // Simulate API network delay
@@ -160,7 +210,6 @@ export const searchTravelogues = async (query: string): Promise<TravelogueChunk[
     let targetLocation = "";
 
     // 1. Gazetteer Lookup (Fuzzy Match / Alias Resolution)
-    // Check if query contains any of our known aliases
     const aliases = Object.keys(PLACE_ALIASES);
     for (const alias of aliases) {
         if (normalizedQuery.includes(alias)) {
@@ -169,18 +218,34 @@ export const searchTravelogues = async (query: string): Promise<TravelogueChunk[
         }
     }
 
-    // 2. Filter Database
+    // 2. Keyword Translation (Persian -> English)
+    // Create a list of terms to search for (Original Query + Translated Keywords)
+    const searchTerms: string[] = [normalizedQuery];
+    
+    // Check if Persian keywords exist in query and add their English equivalents
+    Object.keys(PERSIAN_KEYWORDS).forEach(faTerm => {
+        if (normalizedQuery.includes(faTerm)) {
+            searchTerms.push(PERSIAN_KEYWORDS[faTerm]);
+        }
+    });
+
+    // 3. Filter Database
     const results = TRAVELOGUE_DB.filter(chunk => {
-        // High Confidence: Location ID matches exactly (after resolution)
+        // A. Location Match (Highest Priority)
+        // If the query was explicitly about a known location (e.g. "Shiraz" or "شیراز"), 
+        // return all entries for that location.
         if (targetLocation && chunk.location === targetLocation) {
             return true;
         }
 
-        // Medium Confidence: Text contains the alias directly
-        const textMatch = chunk.text.toLowerCase().includes(normalizedQuery);
-        const titleMatch = chunk.bookTitle.toLowerCase().includes(normalizedQuery);
+        // B. Content Match (Semantic Search)
+        // Check if ANY of the search terms (original or translated) exist in the English text
+        const textLower = chunk.text.toLowerCase();
+        const titleLower = chunk.bookTitle.toLowerCase();
         
-        return textMatch || titleMatch;
+        return searchTerms.some(term => 
+            textLower.includes(term) || titleLower.includes(term)
+        );
     });
 
     return results;

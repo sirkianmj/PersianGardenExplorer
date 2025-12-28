@@ -1,4 +1,3 @@
-// Developed by Kian Mansouri Jamshidi
 import React, { useState, useEffect, useRef } from 'react';
 import { Paper, Note } from '../types';
 import { getPdfData, openExternalLink } from '../services/storageService';
@@ -53,7 +52,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
   useEffect(() => {
     if (!paper) return;
 
-    if (paper.docType === 'artwork') {
+    if (paper.docType === 'artwork' || paper.docType === 'travelogue') {
         setScale(1.0);
         return;
     }
@@ -142,7 +141,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
 
   // 2. Render PDF Page on Canvas
   useEffect(() => {
-    if (!pdfDoc || !canvasRef.current || paper?.docType === 'artwork') return;
+    if (!pdfDoc || !canvasRef.current || paper?.docType === 'artwork' || paper?.docType === 'travelogue') return;
 
     const renderPage = async () => {
       try {
@@ -206,13 +205,14 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
       id: crypto.randomUUID(),
       content: newNote,
       createdAt: Date.now(),
-      page: paper.docType === 'artwork' ? 1 : pageNum 
+      page: (paper.docType === 'artwork' || paper.docType === 'travelogue') ? 1 : pageNum 
     };
     onUpdateNote(paper.id, note);
     setNewNote('');
   };
 
   const isArtwork = paper.docType === 'artwork';
+  const isTravelogue = paper.docType === 'travelogue';
 
   return (
     <div className="flex flex-col md:flex-row h-full bg-[#0B0F12] relative font-sans overflow-hidden" dir="rtl">
@@ -267,16 +267,45 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
                 </div>
             )}
 
-            {/* 2. Loader */}
-            {isLoading && !isArtwork && (
+            {/* 2. Travelogue Viewer (New) */}
+            {isTravelogue && (
+                <div className="w-full max-w-2xl bg-[#1a1612] border border-[#3d3228] shadow-2xl p-8 md:p-12 relative my-auto">
+                    {/* Decorative Corner accents */}
+                    <div className="absolute top-0 left-0 w-16 h-16 border-t-2 border-l-2 border-gold-primary/30"></div>
+                    <div className="absolute top-0 right-0 w-16 h-16 border-t-2 border-r-2 border-gold-primary/30"></div>
+                    <div className="absolute bottom-0 left-0 w-16 h-16 border-b-2 border-l-2 border-gold-primary/30"></div>
+                    <div className="absolute bottom-0 right-0 w-16 h-16 border-b-2 border-r-2 border-gold-primary/30"></div>
+
+                    <div className="text-center mb-8 border-b border-white/5 pb-4">
+                        <h2 className="font-serif text-2xl text-gold-primary mb-2 ltr">{paper.title}</h2>
+                        <div className="text-sm text-gray-400 font-serif ltr italic">by {paper.authors.join(', ')} ({paper.year})</div>
+                    </div>
+
+                    <div className="font-serif text-gray-300 text-lg leading-loose ltr whitespace-pre-wrap">
+                        {paper.abstract}
+                    </div>
+
+                    <div className="mt-8 pt-6 border-t border-white/5 text-center">
+                         {paper.url && (
+                            <button onClick={() => openExternalLink(paper.url!)} className="text-blue-300 bg-blue-500/10 px-6 py-2 rounded-lg hover:bg-blue-500 hover:text-white transition-colors inline-flex items-center gap-2 text-sm">
+                                <span>Read Full Book at Source</span>
+                                <span>↗</span>
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* 3. Loader */}
+            {isLoading && !isArtwork && !isTravelogue && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 z-20 backdrop-blur-sm" dir="rtl">
                     <div className="w-12 h-12 border-4 border-white/10 border-t-teal-glow rounded-full animate-spin mb-4"></div>
                     <span className="text-teal-glow text-xs font-medium">در حال پردازش سند...</span>
                 </div>
             )}
 
-            {/* 3. Fallback */}
-            {!isArtwork && !pdfDoc && !isLoading && (
+            {/* 4. Fallback */}
+            {!isArtwork && !isTravelogue && !pdfDoc && !isLoading && (
                 <div className="max-w-xl w-full glass-panel p-6 text-center mt-10" dir="rtl">
                     <h3 className="text-gold-primary font-bold text-lg mb-2">PDF موجود نیست</h3>
                     <p className="text-gray-400 text-sm mb-4 leading-relaxed">{error || "فایل دیجیتال برای این سند یافت نشد."}</p>
@@ -288,8 +317,8 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
                 </div>
             )}
             
-            {/* 4. PDF Canvas */}
-            {!isArtwork && pdfDoc && (
+            {/* 5. PDF Canvas */}
+            {!isArtwork && !isTravelogue && pdfDoc && (
                 <div className="shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-white/5 my-auto">
                      <canvas ref={canvasRef} className="bg-white block max-w-full h-auto" />
                 </div>
@@ -331,7 +360,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
                     <p className="whitespace-pre-wrap leading-relaxed">{note.content}</p>
                     <div className="mt-2 pt-2 border-t border-white/5 text-[10px] text-gray-500 flex justify-between items-center font-mono">
                         <span>{new Date(note.createdAt).toLocaleDateString('fa-IR')}</span>
-                        {!isArtwork && note.page && (
+                        {(!isArtwork && !isTravelogue) && note.page && (
                             <button 
                                 onClick={() => { setPageNum(note.page!); setShowNotesMobile(false); }}
                                 className="text-gold-primary hover:underline"

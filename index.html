@@ -10,6 +10,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,400&family=Noto+Nastaliq+Urdu:wght@400;700&family=Vazirmatn:wght@100;300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS for Real Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
     <script>
       tailwind.config = {
         theme: {
@@ -87,6 +91,24 @@
         pointer-events: none;
         opacity: 0.5;
       }
+      
+      /* Leaflet Custom Overrides for Dark Theme */
+      .leaflet-container {
+        background: #0B0F12 !important;
+        font-family: 'Vazirmatn', sans-serif !important;
+      }
+      .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+        background: rgba(10, 15, 20, 0.95) !important;
+        color: white !important;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+      }
+      .leaflet-popup-close-button {
+        color: #D4AF37 !important;
+      }
+      .leaflet-control-attribution a {
+        color: #555 !important;
+      }
     </style>
   <script type="importmap">
 {
@@ -98,7 +120,8 @@
     "vite": "https://esm.sh/vite@^7.3.0",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
     "flexsearch": "https://esm.sh/flexsearch@^0.8.212",
-    "pdfjs-dist": "https://esm.sh/pdfjs-dist@^5.4.449"
+    "pdfjs-dist": "https://esm.sh/pdfjs-dist@^5.4.449",
+    "leaflet": "https://esm.sh/leaflet@1.9.4"
   }
 }
 </script>

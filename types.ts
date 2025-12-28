@@ -67,7 +67,7 @@ export interface Paper {
   issue?: string;
   publisher?: string;
   // New fields for Visual Archive support
-  docType?: 'paper' | 'artwork';
+  docType?: 'paper' | 'artwork' | 'travelogue';
   thumbnailUrl?: string;
 }
 
@@ -101,6 +101,7 @@ export interface SearchFilters {
   period: HistoricalPeriod;
   topic: ResearchTopic;
   useGrounding: boolean;
+  forceGardenContext: boolean; // Toggles specific garden keywords
 }
 
 export interface GeminiSearchResult {

@@ -1,4 +1,3 @@
-// Developed by Kian Mansouri Jamshidi
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import PDFReader from './components/PDFReader';
@@ -82,11 +81,19 @@ const App: React.FC = () => {
   const [paperToEdit, setPaperToEdit] = useState<Paper | null>(null);
   const [loadingLib, setLoadingLib] = useState(true);
   const [settings, setSettings] = useState<AppSettings>({ sidebarMode: 'expanded', libraryView: 'grid', theme: 'dark' });
-  const [filters, setFilters] = useState<SearchFilters>({ query: '', period: HistoricalPeriod.ALL, topic: ResearchTopic.GENERAL, useGrounding: true });
-  const [searchTab, setSearchTab] = useState<'papers' | 'art'>('papers');
+  const [filters, setFilters] = useState<SearchFilters>({ 
+      query: '', 
+      period: HistoricalPeriod.ALL, 
+      topic: ResearchTopic.GENERAL, 
+      useGrounding: true,
+      forceGardenContext: true // Default to true for a specialized engine
+  });
+  
+  const [searchTab, setSearchTab] = useState<'papers' | 'art' | 'travelogues' | 'literature'>('papers');
   const [paperResults, setPaperResults] = useState<Partial<Paper>[]>([]);
   const [artResults, setArtResults] = useState<ArtWork[]>([]);
   const [travelogueResults, setTravelogueResults] = useState<TravelogueChunk[]>([]);
+  // const [ganjoorResults, setGanjoorResults] = useState<Partial<Paper>[]>([]); // Hidden
   const [isSearching, setIsSearching] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState('آماده‌به‌کار');
@@ -143,22 +150,40 @@ const App: React.FC = () => {
   const toggleSidebarMode = () => setSettings(prev => ({...prev, sidebarMode: prev.sidebarMode === 'expanded' ? 'compact' : 'expanded'}));
   const setLibraryView = (view: 'grid' | 'list') => setSettings(prev => ({ ...prev, libraryView: view }));
   
-  const executeSearch = async (query: string, period: HistoricalPeriod, topic: ResearchTopic) => {
+  const executeSearch = async (query: string, period: HistoricalPeriod, topic: ResearchTopic, forceGarden: boolean) => {
     if (!query.trim()) return;
     setIsSearching(true);
     setStatusMessage('در حال پردازش...');
-    setPaperResults([]); setArtResults([]); setTravelogueResults([]);
+    setPaperResults([]); setArtResults([]); setTravelogueResults([]); 
+    // setGanjoorResults([]); // Hidden
     try {
-        const [p, a, t] = await Promise.all([searchAcademicPapers(query, period, topic), searchPersianArt(query), searchTravelogues(query)]);
-        setPaperResults(p); setArtResults(a); setTravelogueResults(t);
-        if (p.length === 0 && a.length > 0) setSearchTab('art');
+        const [p, a, t] = await Promise.all([
+            searchAcademicPapers(query, period, topic, forceGarden), 
+            searchPersianArt(query, period, forceGarden), 
+            searchTravelogues(query), 
+            // searchLiterature(query, forceGarden) // Hidden
+        ]);
+        setPaperResults(p); setArtResults(a); setTravelogueResults(t); // setGanjoorResults(l);
+        
+        // Auto-switch tabs if results found in specific categories
+        if (p.length === 0 && t.length > 0) setSearchTab('travelogues');
+        else if (p.length === 0 && a.length > 0) setSearchTab('art');
+        else setSearchTab('papers');
+
         setStatusMessage(`یافت شد: ${p.length + a.length + t.length}`);
     } catch { setStatusMessage('خطا در اتصال'); } 
     finally { setIsSearching(false); }
   };
 
-  const handleSearchSubmit = (e: React.FormEvent) => { e.preventDefault(); executeSearch(filters.query, filters.period, filters.topic); };
-  const handleMapSearch = (q: string) => { setFilters(prev => ({...prev, query: q})); setCurrentView(View.SEARCH); executeSearch(q, filters.period, filters.topic); };
+  const handleSearchSubmit = (e: React.FormEvent) => { 
+      e.preventDefault(); 
+      executeSearch(filters.query, filters.period, filters.topic, filters.forceGardenContext); 
+  };
+  const handleMapSearch = (q: string) => { 
+      setFilters(prev => ({...prev, query: q})); 
+      setCurrentView(View.SEARCH); 
+      executeSearch(q, filters.period, filters.topic, filters.forceGardenContext); 
+  };
   
   // --- INTELLIGENT HARVESTING SYSTEM ---
   const handleQuickAdd = async (p: Partial<Paper>) => {
@@ -216,6 +241,28 @@ const App: React.FC = () => {
   const handleQuickAddArt = async (a: ArtWork) => {
       const newP: Paper = { id: `art-${a.id}`, title: a.title, authors: [a.artist], year: a.date||'N/A', source: a.department||'Gallery', abstract: `${a.medium}`, url: a.museumUrl, thumbnailUrl: a.highResUrl||a.imageUrl, docType: 'artwork', tags: ['Art'], notes: [], addedAt: Date.now(), isLocal: false, language: 'en', apiSource: 'Local' };
       await savePaperMetadata(newP); setLibrary(prev => [newP, ...prev]); setStatusMessage('تصویر نمایه شد');
+  };
+
+  const handleQuickAddTravelogue = async (t: TravelogueChunk) => {
+      const newP: Paper = { 
+          id: `travel-${t.id}-${Date.now()}`,
+          title: t.bookTitle, 
+          authors: [t.author], 
+          year: t.year, 
+          source: 'Historical Travelogue', 
+          abstract: t.text || t.excerpt, // Save full text if available in 'text' field, otherwise excerpt
+          url: t.sourceUrl, 
+          docType: 'travelogue', 
+          tags: ['Travelogue', 'Historical', t.location], 
+          notes: [], 
+          addedAt: Date.now(), 
+          isLocal: false, 
+          language: 'en', 
+          apiSource: 'Local' 
+      };
+      await savePaperMetadata(newP); 
+      setLibrary(prev => [newP, ...prev]); 
+      setStatusMessage('سفرنامه ذخیره شد');
   };
 
   const handleDeletePaper = async (id: string, e: React.MouseEvent) => { e.stopPropagation(); if(confirm('حذف شود؟')) { await deletePaperRecord(id); setLibrary(prev => prev.filter(p => p.id !== id)); setStatusMessage('حذف شد'); } };
@@ -299,16 +346,31 @@ const App: React.FC = () => {
                         
                         <form onSubmit={handleSearchSubmit} className="relative z-10 flex flex-col gap-3 md:gap-4">
                             <div className="flex gap-2 relative">
-                                <div className="relative flex-1">
+                                {/* Search Input Wrapper */}
+                                <div className="relative flex-1 flex items-center bg-black/40 border border-white/10 rounded-xl focus-within:border-teal-glow/50 transition-colors">
                                      <input 
                                         type="text" 
                                         value={filters.query}
                                         onChange={e => setFilters({...filters, query: e.target.value})}
                                         placeholder="جستجوی موضوعی..."
-                                        className="w-full bg-black/40 border border-white/10 rounded-xl pl-3 pr-10 py-3 md:px-5 md:py-4 text-sm md:text-lg text-text-primary placeholder-gray-500 focus:border-teal-glow/50 focus:ring-0 transition-colors"
+                                        className="bg-transparent border-none w-full pl-3 pr-10 py-3 md:px-5 md:py-4 text-sm md:text-lg text-text-primary placeholder-gray-500 focus:ring-0"
                                     />
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">🔍</span>
+                                    
+                                    {/* Force Garden Toggle */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setFilters(prev => ({...prev, forceGardenContext: !prev.forceGardenContext}))}
+                                        className={`ml-2 mr-2 md:ml-3 md:mr-3 p-2 rounded-lg transition-all border flex items-center gap-1 ${filters.forceGardenContext 
+                                            ? 'bg-green-500/10 border-green-500 text-green-400 shadow-[0_0_10px_rgba(74,222,128,0.2)]' 
+                                            : 'bg-white/5 border-white/10 text-gray-500 hover:text-gray-300'}`}
+                                        title={filters.forceGardenContext ? "محدود به باغ ایرانی (فعال)" : "جستجوی آزاد (غیرفعال)"}
+                                    >
+                                        <span className="text-lg leading-none">🍃</span>
+                                        <span className="text-[10px] font-bold hidden md:inline">{filters.forceGardenContext ? 'ON' : 'OFF'}</span>
+                                    </button>
                                 </div>
+
                                 <button type="submit" disabled={isSearching} className="px-4 md:px-6 bg-teal-glow/10 hover:bg-teal-glow/20 text-teal-glow rounded-xl border border-teal-glow/30 transition-all font-bold disabled:opacity-50 flex items-center justify-center min-w-[50px]">
                                     <span className="md:hidden text-xl">➜</span>
                                     <span className="hidden md:inline">کاوش</span>
@@ -347,19 +409,25 @@ const App: React.FC = () => {
                     ) : (
                     /* Results Grid */
                     <div className="flex-1 overflow-y-auto pb-16 md:pb-10 scrollbar-thin">
-                         <div className="flex gap-4 mb-4 border-b border-white/5 pb-2 px-1 sticky top-0 bg-[#0B0F12] z-10 pt-2">
-                             <button onClick={() => setSearchTab('papers')} className={`pb-2 text-xs md:text-sm transition-colors relative ${searchTab === 'papers' ? 'text-white' : 'text-gray-600'}`}>
+                         <div className="flex gap-4 mb-4 border-b border-white/5 pb-2 px-1 sticky top-0 bg-[#0B0F12] z-10 pt-2 overflow-x-auto scrollbar-hide">
+                             <button onClick={() => setSearchTab('papers')} className={`pb-2 text-xs md:text-sm transition-colors relative whitespace-nowrap ${searchTab === 'papers' ? 'text-white' : 'text-gray-600'}`}>
                                  منابع متنی <span className="text-[10px] ml-1 opacity-60">({paperResults.length})</span>
                                  {searchTab === 'papers' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-glow rounded-full"></div>}
                              </button>
-                             <button onClick={() => setSearchTab('art')} className={`pb-2 text-xs md:text-sm transition-colors relative ${searchTab === 'art' ? 'text-white' : 'text-gray-600'}`}>
+                             <button onClick={() => setSearchTab('art')} className={`pb-2 text-xs md:text-sm transition-colors relative whitespace-nowrap ${searchTab === 'art' ? 'text-white' : 'text-gray-600'}`}>
                                  نگارگری <span className="text-[10px] ml-1 opacity-60">({artResults.length})</span>
                                  {searchTab === 'art' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gold-primary rounded-full"></div>}
                              </button>
+                             <button onClick={() => setSearchTab('travelogues')} className={`pb-2 text-xs md:text-sm transition-colors relative whitespace-nowrap ${searchTab === 'travelogues' ? 'text-white' : 'text-gray-600'}`}>
+                                 سفرنامه‌ها <span className="text-[10px] ml-1 opacity-60">({travelogueResults.length})</span>
+                                 {searchTab === 'travelogues' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-400 rounded-full"></div>}
+                             </button>
+                             {/* Ganjoor Tab Hidden */}
                          </div>
 
                          {/* Mobile: 1 col, Desktop: 2-3 cols */}
                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+                             {/* ACADEMIC PAPERS */}
                              {searchTab === 'papers' && paperResults.map((p, i) => (
                                  <div key={i} className="glass-panel p-4 border-white/5 hover:border-teal-glow/30 transition-all group flex flex-col bg-[#151a21]">
                                      <div className="flex justify-between items-start mb-2">
@@ -380,6 +448,7 @@ const App: React.FC = () => {
                                  </div>
                              ))}
 
+                            {/* ART & MUSEUM */}
                             {searchTab === 'art' && artResults.map((a) => (
                                  <div key={a.id} className="glass-panel p-0 overflow-hidden group bg-[#151a21] border-white/5">
                                      <div className="relative aspect-square">
@@ -392,6 +461,52 @@ const App: React.FC = () => {
                                          <button onClick={() => handleQuickAddArt(a)} className="absolute top-2 right-2 bg-gold-primary text-black w-8 h-8 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform z-10">
                                              +
                                          </button>
+                                     </div>
+                                 </div>
+                             ))}
+
+                             {/* TRAVELOGUES */}
+                             {searchTab === 'travelogues' && travelogueResults.map((t) => (
+                                 <div key={t.id} className="glass-panel p-4 border-white/5 hover:border-blue-400/30 transition-all group flex flex-col bg-[#151a21]">
+                                     <div className="flex justify-between items-start mb-2">
+                                          <div className="flex items-center gap-2">
+                                              <span className="text-lg">📜</span>
+                                              <span className="text-[10px] text-gold-primary font-bold">{t.year}</span>
+                                          </div>
+                                         <span className="text-[9px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 uppercase tracking-wider">
+                                             {t.location}
+                                         </span>
+                                     </div>
+                                     <h3 className="font-bold text-text-primary text-sm mb-1 leading-6 group-hover:text-blue-300 transition-colors font-serif ltr text-left">
+                                         {t.bookTitle}
+                                     </h3>
+                                     <h4 className="text-xs text-gray-400 mb-3 font-serif italic ltr text-left">
+                                         by {t.author}
+                                     </h4>
+                                     
+                                     <div className="bg-black/30 p-2 rounded-lg border border-white/5 mb-3">
+                                         <p className="text-[11px] text-gray-300 leading-relaxed font-serif ltr text-left italic">
+                                             "{t.excerpt}"
+                                         </p>
+                                     </div>
+
+                                     <div className="flex justify-between items-center mt-auto border-t border-white/5 pt-3">
+                                         <div className="flex gap-2">
+                                            <button 
+                                                onClick={() => openExternalLink(t.sourceUrl)}
+                                                className="text-blue-300 bg-blue-500/10 p-2 rounded-lg hover:bg-blue-500 hover:text-white transition-colors flex items-center gap-1"
+                                            >
+                                                <span className="text-[10px]">منبع</span>
+                                                <span className="text-xs">↗</span>
+                                            </button>
+                                            <button 
+                                                onClick={() => handleQuickAddTravelogue(t)} 
+                                                className="text-teal-glow bg-teal-glow/10 p-2 rounded-lg hover:bg-teal-glow hover:text-black transition-colors flex items-center gap-1"
+                                            >
+                                                <span className="text-xs font-bold">+</span>
+                                                <span className="text-[10px]">افزودن</span>
+                                            </button>
+                                         </div>
                                      </div>
                                  </div>
                              ))}
@@ -427,18 +542,21 @@ const App: React.FC = () => {
                                     {p.thumbnailUrl ? (
                                         <img src={p.thumbnailUrl} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" />
                                     ) : (
-                                        <div className="w-full h-full flex items-center justify-center">
-                                            <span className="text-4xl opacity-10 grayscale">📄</span>
+                                        <div className={`w-full h-full flex items-center justify-center flex-col gap-2 ${p.docType === 'travelogue' ? 'bg-[#1a1510]' : ''}`}>
+                                            <span className="text-4xl opacity-10 grayscale">
+                                                {p.docType === 'travelogue' ? '📜' : '📄'}
+                                            </span>
+                                            {p.docType === 'travelogue' && <span className="text-[10px] text-gray-500 opacity-50 font-serif">Travelogue</span>}
                                         </div>
                                     )}
                                     <div className="absolute top-2 right-2 flex gap-1">
                                         <span className={`text-[8px] px-1.5 py-0.5 rounded border backdrop-blur-sm ${p.isLocal ? 'bg-teal-glow/10 border-teal-glow text-teal-glow' : 'bg-gray-800/50 border-gray-600 text-gray-400'}`}>
-                                            {p.isLocal ? 'PDF' : 'META'}
+                                            {p.isLocal ? 'PDF' : (p.docType === 'travelogue' ? 'TEXT' : 'META')}
                                         </span>
                                     </div>
                                 </div>
                                 <div className="p-3 flex-1 flex flex-col">
-                                    <h3 className="text-xs font-bold text-text-primary mb-1 line-clamp-2 leading-5">{p.title}</h3>
+                                    <h3 className={`text-xs font-bold text-text-primary mb-1 line-clamp-2 leading-5 ${p.docType === 'travelogue' ? 'font-serif ltr text-left' : ''}`}>{p.title}</h3>
                                     <div className="mt-auto flex justify-between items-center text-[9px] text-gray-500 pt-2 border-t border-white/5">
                                         <span>{p.year}</span>
                                         <button onClick={(e) => handleDeletePaper(p.id, e)} className="hover:text-red-400 p-1">🗑</button>
@@ -518,7 +636,7 @@ const App: React.FC = () => {
 
                              <div className="flex flex-col items-center">
                                  <span className="text-[10px] text-gray-500 mb-1 uppercase tracking-wider">استاد راهنما</span>
-                                 <span className="text-base text-teal-glow font-bold">دکتر حمیدرضا جیحانی</span>
+                                 <span className="text-base text-teal-glow font-bold">دکتر جیحانی</span>
                              </div>
 
                              <div className="w-1/2 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mx-auto my-4"></div>
