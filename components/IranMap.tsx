@@ -65,7 +65,7 @@ interface IranMapProps {
 
 const IranMap: React.FC<IranMapProps> = ({ onProvinceSelect }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<L.Map | null>(null);
+  const mapInstance = useRef<any>(null);
 
   useEffect(() => {
     if (!mapContainer.current || mapInstance.current) return;
@@ -132,7 +132,7 @@ const IranMap: React.FC<IranMapProps> = ({ onProvinceSelect }) => {
         }, 50);
       });
       
-      marker.on('mouseover', function (this: L.Marker) {
+      marker.on('mouseover', function (this: any) {
         this.openPopup();
       });
     });
