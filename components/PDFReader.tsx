@@ -48,21 +48,27 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
   const containerRef = useRef<HTMLDivElement>(null);
   const [showNotesMobile, setShowNotesMobile] = useState(false);
 
+  const isTravelogue = paper?.docType === 'travelogue';
+  const isPdfDocument = !isTravelogue && !!(
+    paper?.isPdf || 
+    paper?.pdfUrl || 
+    paper?.isLocal || 
+    (paper?.url && (paper.url.toLowerCase().endsWith('.pdf') || paper.url.includes('.pdf'))) ||
+    paper?.docType === 'paper'
+  );
+  const isImageArtworkOnly = paper?.docType === 'artwork' && !isPdfDocument;
+
   // 1. Load the PDF Document
   useEffect(() => {
     if (!paper) return;
 
-    if (paper.docType === 'artwork' || paper.docType === 'travelogue') {
+    if (isImageArtworkOnly || isTravelogue) {
         setScale(1.0);
         return;
     }
 
     // Smart Mobile Scale
     if (window.innerWidth < 768) {
-        // Calculate slightly less than width to add padding
-        const containerWidth = window.innerWidth - 32; 
-        // We guess a standard A4 ratio roughly, but we can tune this after page load if needed.
-        // For now, start small.
         setScale(0.6); 
     } else {
         setScale(1.2);
@@ -92,7 +98,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
             throw new Error("Local file data not found in database.");
           }
         } else {
-           const url = paper.url;
+           const url = paper.pdfUrl || paper.url;
            if (!url) {
              setIsLoading(false);
              return;
@@ -107,9 +113,10 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
             setIsLoading(false);
         } catch (loadError: any) {
              console.warn("Primary load failed.", loadError);
-             if (!paper.isLocal && paper.url) {
+             const fallbackUrl = paper.pdfUrl || paper.url;
+             if (!paper.isLocal && fallbackUrl) {
                 try {
-                    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(paper.url)}`;
+                    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(fallbackUrl)}`;
                     const proxyTask = pdfjsLib.getDocument({ ...baseParams, url: proxyUrl });
                     const doc = await proxyTask.promise;
                     setPdfDoc(doc);
@@ -137,7 +144,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
         renderTaskRef.current.cancel();
       }
     };
-  }, [paper]);
+  }, [paper, isImageArtworkOnly, isTravelogue]);
 
   // 2. Render PDF Page on Canvas
   useEffect(() => {
@@ -211,8 +218,54 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
     setNewNote('');
   };
 
-  const isArtwork = paper.docType === 'artwork';
-  const isTravelogue = paper.docType === 'travelogue';
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDirectDownload = async () => {
+    if (!paper) return;
+    setIsDownloading(true);
+    try {
+      if (paper.isLocal) {
+        const data = await getPdfData(paper.id);
+        if (data) {
+          const blob = new Blob([data as unknown as BlobPart], { type: 'application/pdf' });
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = `${paper.title.replace(/[\/\\:*?"<>|]/g, '_')}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          return;
+        }
+      }
+
+      const targetUrl = paper.pdfUrl || paper.url;
+      if (!targetUrl) return;
+
+      const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
+      const res = await fetch(proxyUrl);
+      if (res.ok) {
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `${paper.title.replace(/[\/\\:*?"<>|]/g, '_')}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      } else {
+        openExternalLink(targetUrl);
+      }
+    } catch {
+      if (paper.pdfUrl || paper.url) {
+        openExternalLink(paper.pdfUrl || paper.url!);
+      }
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col md:flex-row h-full bg-[#0B0F12] relative font-sans overflow-hidden" dir="rtl">
@@ -236,17 +289,30 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
           </div>
           
           {/* Viewer Controls */}
-          {(pdfDoc || isArtwork) && (
+          {(pdfDoc || isImageArtworkOnly || isPdfDocument) && (
              <div className="flex items-center space-x-2 space-x-reverse" dir="ltr">
-                {/* Scale Controls - Hidden on tiny screens, simplified */}
+                {/* Direct PDF Download Action */}
+                {(isPdfDocument || paper.url || paper.pdfUrl) && (
+                  <button
+                    onClick={handleDirectDownload}
+                    disabled={isDownloading}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-gold-primary bg-gold-primary/10 hover:bg-gold-primary/20 border border-gold-primary/30 rounded-lg transition-all disabled:opacity-50 active:scale-95"
+                    title="دانلود مستقیم فایل PDF"
+                  >
+                    <span>{isDownloading ? '⏳' : '📥'}</span>
+                    <span className="hidden sm:inline">{isDownloading ? 'در حال دریافت...' : 'دانلود PDF'}</span>
+                  </button>
+                )}
+
+                {/* Scale Controls */}
                 <div className="hidden sm:flex items-center bg-black/50 border border-white/10 rounded-lg p-0.5">
                     <button onClick={() => setScale(s => Math.max(0.4, s - 0.1))} className="px-2 text-gray-400 hover:text-white rounded text-lg">-</button>
                     <span className="text-xs font-mono w-8 text-center text-teal-glow">{Math.round(scale * 100)}</span>
-                    <button onClick={() => setScale(s => Math.min(isArtwork ? 5 : 3, s + 0.1))} className="px-2 text-gray-400 hover:text-white rounded text-lg">+</button>
+                    <button onClick={() => setScale(s => Math.min(isImageArtworkOnly ? 5 : 3, s + 0.1))} className="px-2 text-gray-400 hover:text-white rounded text-lg">+</button>
                 </div>
                 
                 {/* Mobile Pagination */}
-                {!isArtwork && (
+                {isPdfDocument && pdfDoc && (
                     <div className="flex items-center bg-black/50 border border-white/10 rounded-lg p-0.5">
                         <button onClick={() => changePage(1)} disabled={pageNum >= numPages} className="px-2 py-1 text-gray-300 hover:text-white disabled:opacity-30">‹</button>
                         <span className="text-xs font-mono w-10 text-center text-teal-glow">{pageNum}/{numPages}</span>
@@ -260,14 +326,14 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
         {/* Content Viewer */}
         <div ref={containerRef} className="flex-1 overflow-auto bg-[#0a0c10] p-2 md:p-8 flex justify-center relative touch-pan-x touch-pan-y bg-[radial-gradient(#ffffff05_1px,transparent_1px)] bg-[size:16px_16px]" dir="ltr">
             
-            {/* 1. Artwork Viewer */}
-            {isArtwork && paper.thumbnailUrl && (
+            {/* 1. Artwork Image Viewer (Non-PDF) */}
+            {isImageArtworkOnly && paper.thumbnailUrl && (
                 <div className="relative shadow-2xl bg-[#0a0c10] border border-white/10 flex items-center justify-center h-full w-full">
                     <img src={paper.thumbnailUrl} className="max-w-full max-h-full object-contain" />
                 </div>
             )}
 
-            {/* 2. Travelogue Viewer (New) */}
+            {/* 2. Travelogue Viewer */}
             {isTravelogue && (
                 <div className="w-full max-w-2xl bg-[#1a1612] border border-[#3d3228] shadow-2xl p-8 md:p-12 relative my-auto">
                     {/* Decorative Corner accents */}
@@ -297,28 +363,41 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
             )}
 
             {/* 3. Loader */}
-            {isLoading && !isArtwork && !isTravelogue && (
+            {isLoading && isPdfDocument && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 z-20 backdrop-blur-sm" dir="rtl">
                     <div className="w-12 h-12 border-4 border-white/10 border-t-teal-glow rounded-full animate-spin mb-4"></div>
-                    <span className="text-teal-glow text-xs font-medium">در حال پردازش سند...</span>
+                    <span className="text-teal-glow text-xs font-medium">در حال بارگذاری و آماده‌سازی صفحات سند PDF...</span>
                 </div>
             )}
 
             {/* 4. Fallback */}
-            {!isArtwork && !isTravelogue && !pdfDoc && !isLoading && (
+            {isPdfDocument && !pdfDoc && !isLoading && (
                 <div className="max-w-xl w-full glass-panel p-6 text-center mt-10" dir="rtl">
-                    <h3 className="text-gold-primary font-bold text-lg mb-2">PDF موجود نیست</h3>
-                    <p className="text-gray-400 text-sm mb-4 leading-relaxed">{error || "فایل دیجیتال برای این سند یافت نشد."}</p>
-                    {paper.url && (
-                        <button onClick={() => openExternalLink(paper.url!)} className="text-teal-glow border border-teal-glow/50 px-6 py-2 rounded-lg hover:bg-teal-glow/10 text-xs font-bold w-full sm:w-auto">
-                            مشاهده در منبع اصلی ↗
+                    <div className="text-4xl mb-3">📄</div>
+                    <h3 className="text-gold-primary font-bold text-lg mb-2">مشاهده سند PDF</h3>
+                    <p className="text-gray-400 text-sm mb-4 leading-relaxed">{error || "فایل دیجیتال برای این سند یافت شد اما نمایش درون‌برنامه‌ای با محدودیت مبدأ مواجه شد."}</p>
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                      {(paper.pdfUrl || paper.url) && (
+                        <button 
+                          onClick={handleDirectDownload}
+                          disabled={isDownloading}
+                          className="bg-gold-primary text-black font-bold px-6 py-2.5 rounded-xl hover:bg-gold-primary/90 text-xs shadow-glow-gold flex items-center gap-2"
+                        >
+                          <span>{isDownloading ? '⏳' : '📥'}</span>
+                          <span>{isDownloading ? 'در حال دریافت...' : 'دانلود مستقیم فایل PDF'}</span>
                         </button>
-                    )}
+                      )}
+                      {(paper.url || paper.pdfUrl) && (
+                          <button onClick={() => openExternalLink(paper.pdfUrl || paper.url!)} className="text-teal-glow border border-teal-glow/50 px-5 py-2.5 rounded-xl hover:bg-teal-glow/10 text-xs font-bold">
+                              مشاهده در منبع اصلی ↗
+                          </button>
+                      )}
+                    </div>
                 </div>
             )}
             
             {/* 5. PDF Canvas */}
-            {!isArtwork && !isTravelogue && pdfDoc && (
+            {isPdfDocument && pdfDoc && (
                 <div className="shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-white/5 my-auto">
                      <canvas ref={canvasRef} className="bg-white block max-w-full h-auto" />
                 </div>
@@ -360,7 +439,7 @@ const PDFReader: React.FC<PDFReaderProps> = ({ paper, onUpdateNote, onClose, onT
                     <p className="whitespace-pre-wrap leading-relaxed">{note.content}</p>
                     <div className="mt-2 pt-2 border-t border-white/5 text-[10px] text-gray-500 flex justify-between items-center font-mono">
                         <span>{new Date(note.createdAt).toLocaleDateString('fa-IR')}</span>
-                        {(!isArtwork && !isTravelogue) && note.page && (
+                        {(!isImageArtworkOnly && !isTravelogue) && note.page && (
                             <button 
                                 onClick={() => { setPageNum(note.page!); setShowNotesMobile(false); }}
                                 className="text-gold-primary hover:underline"

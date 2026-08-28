@@ -4,6 +4,8 @@ import PDFReader from './components/PDFReader';
 import DatabaseModal from './components/DatabaseModal';
 import CitationModal from './components/CitationModal';
 import IranMap from './components/IranMap';
+import ArtDetailModal from './components/ArtDetailModal';
+import ArtworkImage from './components/ArtworkImage';
 import { View, Paper, HistoricalPeriod, ResearchTopic, SearchFilters, AppSettings, ArtWork, TravelogueChunk } from './types';
 import { searchAcademicPapers, searchPersianArt } from './services/geminiService';
 import { searchTravelogues } from './services/travelogueService';
@@ -93,6 +95,8 @@ const App: React.FC = () => {
   const [paperResults, setPaperResults] = useState<Partial<Paper>[]>([]);
   const [artResults, setArtResults] = useState<ArtWork[]>([]);
   const [travelogueResults, setTravelogueResults] = useState<TravelogueChunk[]>([]);
+  const [selectedArtwork, setSelectedArtwork] = useState<ArtWork | null>(null);
+  const [isArtModalOpen, setIsArtModalOpen] = useState(false);
   // const [ganjoorResults, setGanjoorResults] = useState<Partial<Paper>[]>([]); // Hidden
   const [isSearching, setIsSearching] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -110,6 +114,9 @@ const App: React.FC = () => {
             if (savedSettings) setSettings(JSON.parse(savedSettings));
             const storedPapers = await getAllPapers();
             setLibrary(storedPapers);
+            
+            // Initial rich discovery loading
+            executeSearch('باغ ایرانی', HistoricalPeriod.ALL, ResearchTopic.GENERAL, true);
         } catch (e) { console.error(e); } finally { setLoadingLib(false); }
     };
     loadData();
@@ -239,8 +246,90 @@ const App: React.FC = () => {
   };
 
   const handleQuickAddArt = async (a: ArtWork) => {
-      const newP: Paper = { id: `art-${a.id}`, title: a.title, authors: [a.artist], year: a.date||'N/A', source: a.department||'Gallery', abstract: `${a.medium}`, url: a.museumUrl, thumbnailUrl: a.highResUrl||a.imageUrl, docType: 'artwork', tags: ['Art'], notes: [], addedAt: Date.now(), isLocal: false, language: 'en', apiSource: 'Local' };
-      await savePaperMetadata(newP); setLibrary(prev => [newP, ...prev]); setStatusMessage('تصویر نمایه شد');
+      const isPdf = !!(
+        a.isPdf || 
+        a.pdfUrl || 
+        a.highResUrl?.toLowerCase().endsWith('.pdf') || 
+        a.medium?.includes('PDF')
+      );
+      const targetPdfUrl = a.pdfUrl || (a.highResUrl?.toLowerCase().endsWith('.pdf') ? a.highResUrl : undefined);
+      const newId = `art-${a.id}-${Date.now()}`;
+      
+      const newP: Paper = { 
+          id: newId, 
+          title: a.title, 
+          authors: [a.artist || 'هنرمند ایرانی'], 
+          year: a.date || 'تاریخی', 
+          period: a.period as any,
+          source: a.department || 'آرشیو نگارگری و موزه‌های جهانی', 
+          abstract: `${a.description ? a.description + '\n' : ''}${a.medium || 'نگارگری و مینیاتور ایرانی'} | ${a.period || ''}`, 
+          url: targetPdfUrl || a.museumUrl || a.highResUrl || a.imageUrl, 
+          pdfUrl: targetPdfUrl,
+          thumbnailUrl: a.imageUrl || a.highResUrl, 
+          docType: 'artwork', 
+          isPdf: isPdf,
+          tags: ['Art', isPdf ? 'PDF' : 'Miniature', isPdf ? 'سند خطی' : 'نگارگری', a.period || ''], 
+          notes: [], 
+          addedAt: Date.now(), 
+          isLocal: false, 
+          language: 'fa', 
+          apiSource: 'Local' 
+      };
+
+      if (isPdf && targetPdfUrl) {
+          try {
+              setStatusMessage('دانلود سند PDF...');
+              const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetPdfUrl);
+              const response = await fetch(proxyUrl);
+              if (response.ok) {
+                  const blob = await response.blob();
+                  const file = new File([blob], `${newP.title}.pdf`, { type: 'application/pdf' });
+                  await saveFile(newId, file);
+                  await processAndIndexPaper(newId, newP.title, newP.authors, file);
+                  newP.isLocal = true;
+              }
+          } catch {
+              // fallback to remote url
+          }
+      }
+
+      await savePaperMetadata(newP); 
+      setLibrary(prev => [newP, ...prev]); 
+      setStatusMessage(isPdf ? 'سند PDF در کتابخانه ذخیره شد' : 'شاهکار به کتابخانه ذخیره شد');
+  };
+
+  const handleOpenArtInReader = (a: ArtWork) => {
+    const isPdf = !!(
+      a.isPdf || 
+      a.pdfUrl || 
+      a.highResUrl?.toLowerCase().endsWith('.pdf') || 
+      a.medium?.includes('PDF')
+    );
+    const targetPdfUrl = a.pdfUrl || (a.highResUrl?.toLowerCase().endsWith('.pdf') ? a.highResUrl : undefined);
+
+    const paperObj: Paper = {
+      id: `art-${a.id}-${Date.now()}`,
+      title: a.title,
+      authors: [a.artist || 'هنرمند ایرانی'],
+      year: a.date || 'تاریخی',
+      period: a.period as any,
+      source: a.department || 'آرشیو نگارگری و اسناد تاریخی',
+      abstract: `${a.description ? a.description + '\n' : ''}${a.medium || 'سند تاریخی'} | ${a.period || ''}`,
+      url: targetPdfUrl || a.museumUrl || a.highResUrl || a.imageUrl,
+      pdfUrl: targetPdfUrl,
+      thumbnailUrl: a.imageUrl || a.highResUrl,
+      docType: 'artwork',
+      isPdf: isPdf,
+      tags: ['Art', isPdf ? 'PDF' : 'Miniature', isPdf ? 'سند خطی' : 'نگارگری', a.period || ''],
+      notes: [],
+      addedAt: Date.now(),
+      isLocal: false,
+      language: 'fa',
+      apiSource: 'Local'
+    };
+
+    setCurrentPaper(paperObj);
+    setCurrentView(View.READER);
   };
 
   const handleQuickAddTravelogue = async (t: TravelogueChunk) => {
@@ -449,21 +538,152 @@ const App: React.FC = () => {
                              ))}
 
                             {/* ART & MUSEUM */}
-                            {searchTab === 'art' && artResults.map((a) => (
-                                 <div key={a.id} className="glass-panel p-0 overflow-hidden group bg-[#151a21] border-white/5">
-                                     <div className="relative aspect-square">
-                                         <img src={a.imageUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-                                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-80"></div>
-                                         <div className="absolute bottom-0 left-0 right-0 p-3">
-                                            <h3 className="text-xs font-bold text-white mb-0.5 truncate">{a.title}</h3>
-                                            <p className="text-[10px] text-gold-primary">{a.period}</p>
-                                         </div>
-                                         <button onClick={() => handleQuickAddArt(a)} className="absolute top-2 right-2 bg-gold-primary text-black w-8 h-8 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform z-10">
-                                             +
-                                         </button>
-                                     </div>
-                                 </div>
-                             ))}
+                            {searchTab === 'art' && (
+                                <div className="col-span-full space-y-4">
+                                    {/* Curated Art Filter Tags */}
+                                    <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none text-xs">
+                                        <span className="text-gray-400 text-[11px] shrink-0 font-nastaliq text-gold-primary">فیلترهای سریع مکاتب:</span>
+                                        {[
+                                            { label: 'همه شاهکارها', q: 'نگارگری باغ' },
+                                            { label: 'دوره صفوی', q: 'صفوی نگارگری باغ' },
+                                            { label: 'دوره تیموری', q: 'تیموری نگارگری بهزاد' },
+                                            { label: 'دوره قاجار', q: 'قاجار باغ گل و مرغ' },
+                                            { label: 'شاهنامه شاه‌طهماسب', q: 'شاهنامه شاه طهماسب' },
+                                            { label: 'باغ فین کاشان', q: 'باغ فین کاشان' },
+                                            { label: 'باغ ارم شیراز', q: 'باغ ارم شیراز' },
+                                            { label: 'مکتب هرات', q: 'مکتب هرات کمال الدین بهزاد' },
+                                            { label: 'مکتب اصفهان', q: 'مکتب اصفهان رضا عباسی' }
+                                        ].map((chip, idx) => (
+                                            <button
+                                                key={idx}
+                                                type="button"
+                                                onClick={() => {
+                                                    setFilters(prev => ({ ...prev, query: chip.q }));
+                                                    executeSearch(chip.q, filters.period, filters.topic, filters.forceGardenContext);
+                                                }}
+                                                className="shrink-0 px-2.5 py-1 rounded-full bg-white/5 hover:bg-gold-primary/20 hover:text-gold-primary text-gray-300 border border-white/10 hover:border-gold-primary/40 transition-all text-[11px]"
+                                            >
+                                                {chip.label}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {artResults.length === 0 ? (
+                                        <div className="text-center py-12 glass-panel border-white/5">
+                                            <p className="text-gray-400 text-sm mb-3">در حال جستجوی نگاره‌های تاریخی یا نتیجه‌ای یافت نشد.</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => executeSearch('نگارگری باغ ایرانی', HistoricalPeriod.ALL, ResearchTopic.GENERAL, true)}
+                                                className="px-4 py-2 rounded-lg bg-gold-primary/20 text-gold-primary border border-gold-primary/40 hover:bg-gold-primary hover:text-black transition-all text-xs font-bold"
+                                            >
+                                                بارگذاری نگاره‌های شاهکار ایرانی
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                            {artResults.map((a) => {
+                                                const isPdf = !!(
+                                                    a.isPdf || 
+                                                    a.pdfUrl || 
+                                                    a.highResUrl?.toLowerCase().endsWith('.pdf') || 
+                                                    a.medium?.includes('PDF')
+                                                );
+
+                                                return (
+                                                    <div 
+                                                        key={a.id} 
+                                                        onClick={() => {
+                                                            setSelectedArtwork(a);
+                                                            setIsArtModalOpen(true);
+                                                        }}
+                                                        className={`glass-panel p-0 overflow-hidden group bg-[#151a21] transition-all duration-300 cursor-pointer flex flex-col shadow-lg rounded-xl ${
+                                                            isPdf 
+                                                                ? 'border-teal-glow/30 hover:border-teal-glow shadow-teal-glow/10' 
+                                                                : 'border-white/10 hover:border-gold-primary/50 hover:shadow-gold-primary/10'
+                                                        }`}
+                                                    >
+                                                        <div className="relative aspect-[4/3] bg-black/60 overflow-hidden">
+                                                            <ArtworkImage
+                                                                src={a.imageUrl}
+                                                                fallbackSrc={a.highResUrl}
+                                                                alt={a.title}
+                                                                title={a.title}
+                                                                artist={a.artist}
+                                                                period={a.period}
+                                                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-108 group-hover:brightness-105"
+                                                            />
+                                                            <div className="absolute inset-0 bg-gradient-to-t from-[#151a21] via-transparent to-black/40 opacity-80 group-hover:opacity-60 transition-opacity pointer-events-none"></div>
+                                                            
+                                                            {/* Top Badges */}
+                                                            <div className="absolute top-2 left-2 right-2 flex justify-between items-center pointer-events-none">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-[9px] px-2 py-0.5 rounded-md bg-black/70 text-gold-primary border border-gold-primary/30 backdrop-blur-md">
+                                                                        {a.period || 'نگاره کهن'}
+                                                                    </span>
+                                                                    {isPdf && (
+                                                                        <span className="text-[9px] px-2 py-0.5 rounded-md bg-teal-500/80 text-white font-bold backdrop-blur-md border border-teal-300/40">
+                                                                            📄 سند PDF
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+
+                                                                <div className="flex items-center gap-1">
+                                                                    {isPdf && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleOpenArtInReader(a);
+                                                                            }}
+                                                                            title="ورق‌زدن و مطالعه در کتابخوان"
+                                                                            className="pointer-events-auto bg-teal-glow hover:bg-teal-300 text-black w-7 h-7 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform font-bold text-xs"
+                                                                        >
+                                                                            📖
+                                                                        </button>
+                                                                    )}
+                                                                    <button 
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleQuickAddArt(a);
+                                                                        }} 
+                                                                        title="افزودن به کتابخانه پژوهشی"
+                                                                        className="pointer-events-auto bg-gold-primary hover:bg-yellow-400 text-black w-7 h-7 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform font-bold text-sm"
+                                                                    >
+                                                                        +
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Hover Zoom / Read Prompt */}
+                                                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                                                <span className="px-3 py-1.5 rounded-full bg-black/80 text-white text-[11px] backdrop-blur-md border border-white/20 flex items-center gap-1.5 shadow-xl">
+                                                                    <span>{isPdf ? '📖' : '🔍'}</span> {isPdf ? 'مطالعه و ورق‌زدن PDF' : 'مشاهده و بزرگ‌نمایی'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="p-3 flex-1 flex flex-col justify-between">
+                                                            <div>
+                                                                <h3 className="text-xs font-bold text-text-primary mb-1 line-clamp-1 group-hover:text-gold-primary transition-colors">
+                                                                    {a.title}
+                                                                </h3>
+                                                                <p className="text-[11px] text-gray-400 line-clamp-1 mb-1">
+                                                                    {a.artist || 'هنرمند ایرانی'}
+                                                                </p>
+                                                            </div>
+                                                            <div className="mt-2 pt-2 border-t border-white/5 flex justify-between items-center text-[10px] text-gray-500">
+                                                                <span className="truncate max-w-[150px]">{a.department || 'آرشیو هنر ایرانی'}</span>
+                                                                <span className="text-gold-primary/80 text-[10px]">{a.date || (isPdf ? 'سند چاپی' : '')}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                              {/* TRAVELOGUES */}
                              {searchTab === 'travelogues' && travelogueResults.map((t) => (
@@ -672,6 +892,16 @@ const App: React.FC = () => {
 
             <DatabaseModal isOpen={isDbModalOpen} onClose={() => setIsDbModalOpen(false)} onSave={handleSaveDbRecord} initialData={paperToEdit} />
             <CitationModal paper={citationPaper} onClose={() => setCitationPaper(null)} />
+            <ArtDetailModal 
+                isOpen={isArtModalOpen} 
+                artwork={selectedArtwork} 
+                onClose={() => {
+                    setIsArtModalOpen(false);
+                    setSelectedArtwork(null);
+                }} 
+                onAddToLibrary={handleQuickAddArt} 
+                onOpenInReader={handleOpenArtInReader}
+            />
         </div>
       </main>
     </div>

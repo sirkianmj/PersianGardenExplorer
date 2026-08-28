@@ -1,5 +1,8 @@
 {
   "name": "Pardis Scholar",
   "description": "A specialized academic research engine and archival library for Persian Garden studies, facilitating discovery, analysis, and preservation of architectural and historical texts.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

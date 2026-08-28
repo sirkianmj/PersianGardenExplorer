@@ -1,5 +1,6 @@
 // Developed by Kian Mansouri Jamshidi
 import { Paper, HistoricalPeriod, ResearchTopic, ArtWork } from '../types';
+import { PERSIAN_ART_ARCHIVE } from '../data/persianArtArchive';
 
 // --- Configuration ---
 // Using corsproxy.io to bypass CORS restrictions on Iranian academic sites
@@ -10,12 +11,24 @@ const SEMANTIC_FIELDS = 'paperId,title,authors,year,abstract,venue,url,openAcces
 
 const CROSSREF_BASE = 'https://api.crossref.org/works';
 
-// Museum APIs
+// Museum APIs (Open Access with CORS support)
 const MET_MUSEUM_SEARCH = 'https://collectionapi.metmuseum.org/public/collection/v1/search';
 const MET_MUSEUM_OBJECT = 'https://collectionapi.metmuseum.org/public/collection/v1/objects';
 const CLEVELAND_API = 'https://openaccess-api.clevelandart.org/api/artworks';
-const CHICAGO_API = 'https://api.artic.edu/api/v1/artworks/search';
-const CHICAGO_IIIF = 'https://www.artic.edu/iiif/2';
+
+// Resilient fetch with strict timeout to prevent infinite loading
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs = 4500): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(timer);
+        return res;
+    } catch (err) {
+        clearTimeout(timer);
+        throw err;
+    }
+};
 
 // Ganjoor API
 const GANJOOR_API_BASE = 'https://api.ganjoor.net/api/ganjoor/poem/search';
@@ -76,24 +89,258 @@ const cleanAbstract = (text: string | undefined): string => {
   return text.replace(/<[^>]*>?/gm, '').substring(0, 600) + (text.length > 600 ? '...' : '');
 };
 
-const translateToEnglishArtTerm = (persianQuery: string): string => {
-    // Basic translation map for Art specific terms
+const translateToEnglishArtTerm = (rawQuery: string): string => {
+    if (!rawQuery || typeof rawQuery !== 'string') return "Persian art";
+    const q = rawQuery.trim().toLowerCase();
+
+    // If already in English or mostly English
+    if (!isPersian(q) && q.length > 1) {
+        return q;
+    }
+
     const artMap: Record<string, string> = {
-        'باغ': 'Garden', 'فرش': 'Carpet', 'قالی': 'Rug', 'مینیاتور': 'Miniature Painting',
-        'نگارگری': 'Illuminated Manuscript', 'نقاشی': 'Painting', 'کاشی': 'Tile', 'سفال': 'Ceramic',
-        'معماری': 'Architecture', 'صفوی': 'Safavid', 'تیموری': 'Timurid', 'قاجار': 'Qajar',
-        'گل': 'Flower', 'بلبل': 'Bird', 'کتاب': 'Book', 'نسخه': 'Manuscript', 'خط': 'Calligraphy'
+        // Ancient Civilizations & Pre-Islamic Iran
+        'ایلام': 'Elamite',
+        'عیلام': 'Elamite',
+        'ایلامی': 'Elamite',
+        'عیلامی': 'Elamite',
+        'چغازنبیل': 'Chogha Zanbil',
+        'چغا زنبیل': 'Chogha Zanbil',
+        'دور اونتاش': 'Chogha Zanbil Dur-Untash',
+        'شوش': 'Susa Elamite',
+        'ناپیرآسو': 'Napir-Asu Elamite',
+        'ناپیر اسو': 'Napir-Asu Elamite',
+        'اینشوشیناک': 'Inshushinak Elamite',
+        'اونتاش': 'Untash Elamite',
+        'مفرغ لرستان': 'Luristan Bronze',
+        'برنز لرستان': 'Luristan Bronze',
+        'لرستان': 'Luristan Bronze',
+        'سیلک': 'Tepe Sialk',
+        'تپه سیلک': 'Tepe Sialk',
+        'مارلیک': 'Marlik Gold',
+        'حسنلو': 'Hasanlu Gold',
+        'جام حسنلو': 'Golden Bowl Hasanlu',
+        'جیرفت': 'Jiroft',
+        'ماد': 'Median',
+        'مادی': 'Median',
+        'مادها': 'Median',
+        'هخامنشی': 'Achaemenid',
+        'هخامنشیان': 'Achaemenid',
+        'پارسه': 'Persepolis',
+        'تخت جمشید': 'Persepolis Achaemenid',
+        'پرسپولیس': 'Persepolis',
+        'پاسارگاد': 'Pasargadae Achaemenid',
+        'کوروش': 'Cyrus Achaemenid',
+        'داریوش': 'Darius Achaemenid',
+        'خشایارشا': 'Xerxes Achaemenid',
+        'سلوکی': 'Seleucid',
+        'سلوکیان': 'Seleucid',
+        'اشکانی': 'Parthian',
+        'اشکانیان': 'Parthian',
+        'پارتی': 'Parthian',
+        'ساسانی': 'Sasanian',
+        'ساسانیان': 'Sasanian',
+        'طاق بستان': 'Taq-e Bostan Sasanian',
+        'طاقبستان': 'Taq-e Bostan Sasanian',
+        'نقش رستم': 'Naqsh-e Rustam',
+        'نقش رجب': 'Naqsh-e Rajab',
+        'بیشاپور': 'Bishapur Sasanian',
+
+        // Dynasties & Eras (Islamic Period)
+        'صفوی': 'Safavid',
+        'صفویه': 'Safavid',
+        'قاجار': 'Qajar',
+        'قاجاری': 'Qajar',
+        'قاجاریه': 'Qajar',
+        'تیموری': 'Timurid',
+        'تیموریان': 'Timurid',
+        'ایلخانی': 'Ilkhanid',
+        'ایلخانان': 'Ilkhanid',
+        'سلجوقی': 'Seljuk',
+        'سلجوقیان': 'Seljuk',
+        'افشار': 'Afsharid',
+        'افشاریه': 'Afsharid',
+        'زند': 'Zand',
+        'زندیه': 'Zand',
+        'سامانی': 'Samanid',
+        'غزنوی': 'Ghaznavid',
+        'مغول': 'Mughal Persian',
+
+        // Literature, Epics & Manuscripts
+        'شاهنامه': 'Shahnameh',
+        'فردوسی': 'Ferdowsi Shahnameh',
+        'خمسه': 'Khamsa Nizami',
+        'نظامی': 'Nizami Ganjavi',
+        'هفت پیکر': 'Haft Paykar',
+        'خسرو و شیرین': 'Khosrow Shirin',
+        'لیلی و مجنون': 'Layla Majnun',
+        'منطق الطیر': 'Mantiq al-Tayr Attar',
+        'عطار': 'Attar',
+        'گلستان': 'Gulistan Saadi',
+        'بوستان': 'Bustan Saadi',
+        'سعدی': 'Saadi',
+        'حافظ': 'Hafez Divan',
+        'خیام': 'Khayyam',
+        'جامی': 'Jami Haft Awrang',
+        'هفت اورنگ': 'Haft Awrang',
+        'کلیله و دمنه': 'Kalila wa Dimna',
+
+        // Masters & Artists
+        'بهزاد': 'Kamal al-Din Behzad',
+        'کمال الدین بهزاد': 'Kamal al-Din Behzad',
+        'رضا عباسی': 'Reza Abbasi',
+        'عباسی': 'Reza Abbasi',
+        'سلطان محمد': 'Sultan Muhammad',
+        'میرک': 'Aqa Mirak',
+        'آقا میرک': 'Aqa Mirak',
+        'میر مصور': 'Mir Musavvir',
+        'معین مصور': 'Muin Musavvir',
+        'کمال الملک': 'Kamal-ol-Molk',
+        'صنیع الملک': 'Sani-ol-Molk',
+        'مهرعلی': 'Mihr Ali Qajar',
+        'حبیب الله': 'Habiballah',
+        'میرعلی هروی': 'Mir Ali Haravi',
+        'فرشچیان': 'Farshchian',
+
+        // Themes, Figures & Myth
+        'معراج': 'Miraj Prophet ascension',
+        'رستم': 'Rustam Rostam',
+        'سهراب': 'Sohrab',
+        'اسفندیار': 'Isfandiyar',
+        'کیومرث': 'Gayumars Kayumars',
+        'اسکندر': 'Iskandar Alexander',
+        'بهرام': 'Bahram Gur',
+        'بهرام گور': 'Bahram Gur',
+        'شیرین': 'Shirin',
+        'خسرو': 'Khosrow',
+        'دیو': 'Div demon',
+        'دیو سپید': 'White Div',
+        'بزم': 'Feast Banquet',
+        'رزم': 'Battle Fight',
+        'نبرد': 'Battle',
+        'شکار': 'Hunting Hunt',
+        'شکارگاه': 'Hunting Scene',
+        'چوگان': 'Polo game',
+        'عاشق': 'Lovers',
+        'دلداده': 'Lovers',
+        'درویش': 'Dervish Sufi',
+        'صوفی': 'Sufi Dervish',
+        'شاه': 'Shah King Prince',
+        'پادشاه': 'Shah King',
+        'ساقی': 'Cupbearer',
+        'مطرب': 'Musician',
+        'نوازنده': 'Musician',
+
+        // Garden, Architecture & Nature
+        'باغ': 'Garden',
+        'پردیس': 'Paradise Garden',
+        'چهارباغ': 'Chaharbagh Garden',
+        'گل و بلبل': 'Rose and Nightingale Gol o Bolbol',
+        'گل': 'Flower Rose',
+        'بلبل': 'Nightingale',
+        'سرو': 'Cypress tree',
+        'چنار': 'Plane tree',
+        'حوض': 'Pool Fountain',
+        'استخر': 'Pool basin',
+        'فواره': 'Fountain',
+        'کوشک': 'Pavilion Palace',
+        'عمارت': 'Palace Pavilion',
+        'طاووس': 'Peacock',
+        'باز': 'Falcon',
+        'شاهین': 'Falcon',
+        'اسب': 'Horse Stallion',
+        'رخش': 'Rakhsh horse',
+        'شیر': 'Lion',
+        'پلنگ': 'Leopard',
+        'غزال': 'Gazelle deer',
+        'آهو': 'Gazelle deer',
+        'سیمرغ': 'Simurgh',
+        'اژدها': 'Dragon',
+        'درخت': 'Tree',
+        'شکوفه': 'Blossom blossom tree',
+        'بز کوهی': 'Ibex',
+
+        // Mediums & Decorative Arts
+        'نگارگری': 'Miniature Painting',
+        'مینیاتور': 'Miniature',
+        'نقاشی': 'Painting',
+        'پرتره': 'Portrait',
+        'تذهیب': 'Illuminated Manuscript',
+        'تشعیر': 'Marginal illumination',
+        'خط': 'Calligraphy',
+        'خوشنویسی': 'Calligraphy',
+        'نستعلیق': 'Nastaliq Calligraphy',
+        'کوفی': 'Kufic Calligraphy',
+        'میخی': 'Cuneiform',
+        'کتیبه': 'Inscription',
+        'تندیس': 'Statue Sculpture',
+        'مجسمه': 'Statue',
+        'پیکره': 'Sculpture',
+        'فرش': 'Carpet Rug',
+        'قالی': 'Carpet Rug',
+        'قالیچه': 'Rug',
+        'کاشی': 'Tile Tilework',
+        'کاشی کاری': 'Tile mosaic',
+        'سفال': 'Ceramic Pottery',
+        'سرامیک': 'Ceramic',
+        'زرین فام': 'Luster Lusterware',
+        'میناکاری': 'Enamel',
+        'فلزکاری': 'Metalwork',
+        'مفرغ': 'Bronze',
+        'برنز': 'Bronze',
+        'طلا': 'Gold',
+        'نقره': 'Silver',
+        'جام': 'Cup Bowl Vessel',
+        'کاسه': 'Bowl',
+        'محراب': 'Mihrab prayer niche',
+        'قلمدان': 'Pen box Lacquer',
+        'لاکی': 'Lacquer',
+        'فرسکو': 'Fresco Wall Painting',
+        'دیوارنگاره': 'Mural Wall Painting',
+
+        // Cities & Monuments
+        'اصفهان': 'Isfahan',
+        'اسپهان': 'Isfahan',
+        'شیراز': 'Shiraz',
+        'کاشان': 'Kashan',
+        'تبریز': 'Tabriz',
+        'هرات': 'Herat',
+        'یزد': 'Yazd',
+        'قزوین': 'Qazvin',
+        'نیشابور': 'Nishapur',
+        'مشهد': 'Mashhad',
+        'خراسان': 'Khorasan',
+        'تهران': 'Tehran',
+        'چهلستون': 'Chehel Sotoun Isfahan',
+        'چهل ستون': 'Chehel Sotoun Isfahan',
+        'هشت بهشت': 'Hasht Behesht',
+        'کاخ گلستان': 'Golestan Palace Tehran',
+        'عالی قاپو': 'Ali Qapu Isfahan',
+        'فین': 'Fin Garden Kashan',
+        'ارم': 'Eram Garden Shiraz'
     };
-    
-    let englishTerms: string[] = [];
-    Object.keys(artMap).forEach(term => {
-        if (persianQuery.includes(term)) englishTerms.push(artMap[term]);
-    });
-    
-    // If no specific terms found, but input is Persian, return general term
-    if (englishTerms.length === 0 && isPersian(persianQuery)) return "Persian Art";
-    
-    return englishTerms.join(' ');
+
+    const matchedEnglishTerms: string[] = [];
+    const lowerQuery = q.toLowerCase();
+
+    for (const [faKey, enVal] of Object.entries(artMap)) {
+        if (lowerQuery.includes(faKey)) {
+            matchedEnglishTerms.push(enVal);
+        }
+    }
+
+    if (matchedEnglishTerms.length > 0) {
+        // De-duplicate terms
+        const uniqueTerms = Array.from(new Set(matchedEnglishTerms.join(' ').split(/\s+/)));
+        const combined = uniqueTerms.join(' ');
+        
+        // If already includes specific culture/site name, return directly
+        const isAncientOrSpecific = /Elamite|Chogha|Susa|Luristan|Achaemenid|Sasanian|Parthian|Median|Jiroft|Sialk|Marlik|Hasanlu|Persepolis|Pasargadae/i.test(combined);
+        return isAncientOrSpecific ? combined : `Persian ${combined}`;
+    }
+
+    // Fallback translation attempt
+    return extractPersianQuery(q);
 };
 
 const translateToPersianLiteratureTerm = (query: string): string => {
@@ -249,7 +496,7 @@ const fetchGanjoor = async (augmentedQuery: string): Promise<Partial<Paper>[]> =
         const targetUrl = `https://ganjoor.net/?s=${encodedQuery}`;
         const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
 
-        const response = await fetch(proxyUrl);
+        const response = await fetchWithTimeout(proxyUrl, {}, 3500);
         if (!response.ok) return [];
         const html = await response.text();
         const parser = new DOMParser();
@@ -315,7 +562,7 @@ const fetchSID = async (augmentedQuery: string): Promise<Partial<Paper>[]> => {
         const encodedQuery = encodeURIComponent(smartQuery);
         const targetUrl = `https://www.sid.ir/fa/search/paper/paper?q=${encodedQuery}`;
         const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
-        const response = await fetch(proxyUrl);
+        const response = await fetchWithTimeout(proxyUrl, {}, 3500);
         if (!response.ok) return [];
         
         const html = await response.text();
@@ -360,7 +607,7 @@ const fetchSemanticScholar = async (augmentedQuery: string): Promise<Partial<Pap
     const targetUrl = `${SEMANTIC_SCHOLAR_BASE}?query=${encodeURIComponent(smartQuery)}&limit=8&fields=${SEMANTIC_FIELDS}`;
     const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
     
-    const response = await fetch(proxyUrl);
+    const response = await fetchWithTimeout(proxyUrl, {}, 3500);
     if (!response.ok) return [];
     const text = await response.text();
     if (text.includes("Too Many Requests") || text.includes("Rate Limit")) return [];
@@ -392,7 +639,7 @@ const fetchCrossRef = async (augmentedQuery: string): Promise<Partial<Paper>[]> 
     if (smartQuery.length < 3) smartQuery = cleanMixedQuery(augmentedQuery);
 
     const targetUrl = `${CROSSREF_BASE}?query.bibliographic=${encodeURIComponent(smartQuery)}&rows=10&sort=relevance`;
-    const response = await fetch(targetUrl);
+    const response = await fetchWithTimeout(targetUrl, {}, 3500);
     if (!response.ok) return [];
     
     const data = await response.json();
@@ -419,92 +666,161 @@ const fetchCrossRef = async (augmentedQuery: string): Promise<Partial<Paper>[]> 
   } catch (error) { console.warn("CrossRef error", error); return []; }
 };
 
-// --- VISUAL ARCHIVE: Multi-Museum Search ---
+// --- VISUAL ARCHIVE: Multi-Museum & Cleveland/Met/Wikimedia Open Access Search ---
+
+const WIKIMEDIA_COMMONS_API = 'https://commons.wikimedia.org/w/api.php';
+
+const fetchWikimediaArt = async (smartQuery: string): Promise<ArtWork[]> => {
+    try {
+        const queryTerm = smartQuery.trim();
+        if (!queryTerm) return [];
+        const url = `${WIKIMEDIA_COMMONS_API}?action=query&format=json&origin=*&generator=search&gsrnamespace=6&gsrlimit=12&gsrsearch=${encodeURIComponent(queryTerm)}&prop=imageinfo&iiprop=url|extmetadata|dimensions&iiurlwidth=800`;
+
+        const res = await fetchWithTimeout(url, {
+            headers: { 'User-Agent': 'PardisScholar/1.0 (kianmj18@gmail.com) ResearchApp/1.0' }
+        }, 4000);
+        if (!res.ok) return [];
+        const json = await res.json();
+        if (!json.query || !json.query.pages) return [];
+
+        const pages = Object.values(json.query.pages) as any[];
+        const validArt: ArtWork[] = [];
+
+        for (const page of pages) {
+            const info = page.imageinfo?.[0];
+            if (!info || !info.thumburl) continue;
+
+            const filename = page.title ? page.title.replace(/^File:/i, '') : 'نگاره تاریخی ایرانی';
+            // Skip .svg maps or diagrams if not aesthetic artwork
+            if (filename.toLowerCase().endsWith('.svg')) continue;
+
+            const isPdf = filename.toLowerCase().endsWith('.pdf') || (info.url && info.url.toLowerCase().endsWith('.pdf')) || info.mime === 'application/pdf';
+            const cleanTitle = filename.replace(/\.(jpg|jpeg|png|webp|tif|tiff|pdf)$/i, '').replace(/_/g, ' ');
+            
+            const ext = info.extmetadata || {};
+            const artistRaw = ext.Artist?.value ? ext.Artist.value.replace(/<[^>]*>?/gm, '').trim() : 'هنرمند ایرانی / مکتب نگارگری و باستان';
+            const dateRaw = ext.DateTimeOriginal?.value || ext.DateTime?.value || 'تاریخی';
+            const descRaw = ext.ImageDescription?.value ? ext.ImageDescription.value.replace(/<[^>]*>?/gm, '').trim().substring(0, 300) : '';
+
+            validArt.push({
+                id: `wiki-${page.pageid || Math.random().toString(36).substring(2, 9)}`,
+                title: cleanTitle,
+                artist: artistRaw.length > 60 ? artistRaw.substring(0, 60) + '...' : artistRaw,
+                period: isPdf ? 'سند و نسخه خطی / کتاب تاریخی' : 'میراث فرهنگی و تاریخ هنر ایران',
+                date: String(dateRaw).substring(0, 25),
+                imageUrl: info.thumburl,
+                highResUrl: info.url || info.thumburl,
+                museumUrl: `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title || '')}`,
+                department: isPdf ? 'آرشیو اسناد و کتب دیجیتال (ویکی‌انبار)' : 'ویکی‌انبار میراث فرهنگی (Wikimedia Commons)',
+                medium: isPdf ? 'سند دیجیتال / نسخه خطی (PDF)' : 'اثر موزه‌ای / نگاره تاریخی',
+                description: descRaw,
+                isPdf: isPdf,
+                pdfUrl: isPdf ? info.url : undefined
+            });
+        }
+
+        return validArt;
+    } catch (e) {
+        return [];
+    }
+};
 
 const fetchClevelandArt = async (smartQuery: string): Promise<ArtWork[]> => {
     try {
-        const q = `${smartQuery} (Iran OR Persian OR Islamic)`;
-        const url = `${CLEVELAND_API}?q=${encodeURIComponent(q)}&has_image=1&limit=20`;
-        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
-        const res = await fetch(proxyUrl);
+        const cleanQ = extractEnglishQuery(smartQuery) || "Persian art";
+        const url = `${CLEVELAND_API}/?q=${encodeURIComponent(cleanQ)}&has_image=1&limit=15`;
+        const res = await fetchWithTimeout(url, {}, 4000);
+        if (!res.ok) return [];
         const json = await res.json();
-        if (!json.data) return [];
+        if (!json.data || !Array.isArray(json.data)) return [];
         
         return json.data.map((item: any) => ({
             id: `cma-${item.id}`,
-            title: item.title,
-            artist: item.creators?.[0]?.description || 'Unknown',
-            period: item.culture?.[0] || 'Unknown',
-            date: item.creation_date || '',
-            imageUrl: item.images?.web?.url,
+            title: item.title || 'شاهکار هنر ایرانی',
+            artist: item.creators?.[0]?.description || 'هنرمند ایرانی',
+            period: item.culture?.[0] || 'هنر دوران تاریخی ایران',
+            date: item.creation_date || 'تاریخی',
+            imageUrl: item.images?.web?.url || item.images?.print?.url,
             highResUrl: item.images?.print?.url || item.images?.web?.url,
-            museumUrl: item.url,
-            department: item.department || 'Cleveland Museum of Art',
-            medium: item.technique || ''
-        } as ArtWork)).filter((art: ArtWork) => art.imageUrl);
-    } catch (e) { return []; }
-};
-
-const fetchChicagoArt = async (smartQuery: string): Promise<ArtWork[]> => {
-    try {
-        const q = `${smartQuery} Persian`;
-        const fields = 'id,title,image_id,artist_display,date_display,medium_display,place_of_origin';
-        const url = `${CHICAGO_API}?q=${encodeURIComponent(q)}&query[term][is_public_domain]=true&limit=20&fields=${fields}`;
-        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(url)}`;
-        const res = await fetch(proxyUrl);
-        const json = await res.json();
-        if (!json.data) return [];
-        
-        return json.data.map((item: any) => {
-            if (!item.image_id) return null;
-            return {
-                id: `aic-${item.id}`,
-                title: item.title,
-                artist: item.artist_display || 'Unknown',
-                period: item.place_of_origin || 'Unknown',
-                date: item.date_display || '',
-                imageUrl: `${CHICAGO_IIIF}/${item.image_id}/full/400,/0/default.jpg`,
-                highResUrl: `${CHICAGO_IIIF}/${item.image_id}/full/843,/0/default.jpg`,
-                museumUrl: `https://www.artic.edu/artworks/${item.id}`,
-                department: 'Art Institute of Chicago',
-                medium: item.medium_display || ''
-            } as ArtWork;
-        }).filter(Boolean) as ArtWork[];
-    } catch (e) { return []; }
+            museumUrl: item.url || `https://www.clevelandart.org/art/${item.id}`,
+            department: item.department || 'موزه هنر کلیولند (Cleveland Museum of Art)',
+            medium: item.technique || 'آبرنگ مات و طلا روی کاغذ',
+            description: item.tombstone || item.wall_description || ''
+        } as ArtWork)).filter((art: ArtWork) => Boolean(art.imageUrl));
+    } catch (e) { 
+        return []; 
+    }
 };
 
 const fetchMetMuseum = async (smartQuery: string): Promise<ArtWork[]> => {
     try {
-        const q = `${smartQuery} Persian`;
-        const searchUrl = `${MET_MUSEUM_SEARCH}?q=${encodeURIComponent(q)}&hasImages=true`;
-        const proxySearch = `${CORS_PROXY}${encodeURIComponent(searchUrl)}`;
-        const searchRes = await fetch(proxySearch);
-        const searchJson = await searchRes.json();
-        if (!searchJson.objectIDs || searchJson.objectIDs.length === 0) return [];
-        const topIds = searchJson.objectIDs.slice(0, 8);
-        const artworks = await Promise.all(topIds.map(async (id: number) => {
+        const cleanQ = extractEnglishQuery(smartQuery) || "Persian art";
+        const searchUrl = `${MET_MUSEUM_SEARCH}?q=${encodeURIComponent(cleanQ)}&hasImages=true`;
+        const searchRes = await fetchWithTimeout(searchUrl, {}, 3500);
+        if (!searchRes.ok) return [];
+        
+        let searchJson: any;
+        try {
+            searchJson = await searchRes.json();
+        } catch {
+            return [];
+        }
+
+        if (!searchJson || !searchJson.objectIDs || searchJson.objectIDs.length === 0) return [];
+        
+        const topIds = searchJson.objectIDs.slice(0, 10);
+        const qTerms = cleanQ.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+
+        const artworks = await Promise.allSettled(topIds.map(async (id: number) => {
+            const objUrl = `${MET_MUSEUM_OBJECT}/${id}`;
+            const objRes = await fetchWithTimeout(objUrl, {}, 3000);
+            if (!objRes.ok) return null;
+            let obj: any;
             try {
-                const objUrl = `${MET_MUSEUM_OBJECT}/${id}`;
-                const proxyObj = `${CORS_PROXY}${encodeURIComponent(objUrl)}`;
-                const objRes = await fetch(proxyObj);
-                const obj = await objRes.json();
-                if (!obj.primaryImageSmall) return null;
-                return {
-                    id: `met-${obj.objectID}`,
-                    title: obj.title,
-                    artist: obj.artistDisplayName || 'Unknown',
-                    period: obj.period || obj.dynasty || 'Unknown',
-                    date: obj.objectDate || '',
-                    imageUrl: obj.primaryImageSmall,
-                    highResUrl: obj.primaryImage,
-                    museumUrl: obj.objectURL,
-                    department: 'Metropolitan Museum of Art',
-                    medium: obj.medium || ''
-                } as ArtWork;
-            } catch (e) { return null; }
+                obj = await objRes.json();
+            } catch {
+                return null;
+            }
+            if (!obj.primaryImageSmall && !obj.primaryImage) return null;
+
+            // Relevance verification
+            const dept = (obj.department || '').toLowerCase();
+            const culture = (obj.culture || '').toLowerCase();
+            const period = (obj.period || '').toLowerCase();
+            const dynasty = (obj.dynasty || '').toLowerCase();
+            const title = (obj.title || '').toLowerCase();
+            const country = (obj.country || '').toLowerCase();
+
+            const isHeritageRelevant = 
+                dept.includes('near east') || dept.includes('islamic') || dept.includes('asian') ||
+                culture.includes('iran') || culture.includes('persi') || culture.includes('elam') ||
+                country.includes('iran') ||
+                qTerms.some(term => title.includes(term) || culture.includes(term) || period.includes(term) || dynasty.includes(term));
+
+            if (!isHeritageRelevant) return null;
+
+            return {
+                id: `met-${obj.objectID}`,
+                title: obj.title || 'شاهکار هنر ایرانی',
+                artist: obj.artistDisplayName || 'استاد هنر و باستان‌شناسی ایران',
+                period: obj.period || obj.dynasty || obj.culture || 'هنر تاریخی ایران و خاور باستان',
+                date: obj.objectDate || 'کهن',
+                imageUrl: obj.primaryImageSmall || obj.primaryImage,
+                highResUrl: obj.primaryImage || obj.primaryImageSmall,
+                museumUrl: obj.objectURL || `https://www.metmuseum.org/art/collection/search/${obj.objectID}`,
+                department: 'موزه متروپولیتن نیویورک (Met Museum)',
+                medium: obj.medium || 'اثر موزه متروپولیتن نیویورک',
+                description: `${obj.culture || ''} ${obj.classification || ''} ${obj.creditLine || ''}`.trim()
+            } as ArtWork;
         }));
-        return artworks.filter(Boolean) as ArtWork[];
-    } catch (e) { return []; }
+        
+        return artworks
+            .filter((r): r is PromiseFulfilledResult<ArtWork | null> => r.status === 'fulfilled')
+            .map(r => r.value)
+            .filter(Boolean) as ArtWork[];
+    } catch (e) { 
+        return []; 
+    }
 };
 
 // --- MAIN SEARCH FUNCTIONS ---
@@ -539,7 +855,6 @@ export const searchAcademicPapers = async (
   console.log(`Executing Augmented Search: "${augmentedQuery}"`);
 
   // 2. Parallel Execution of all Free Sources
-  // NOTE: Ganjoor removed from here, now in searchLiterature
   const [semanticResults, crossrefResults, sidResults, noorResults] = await Promise.all([
     fetchSemanticScholar(augmentedQuery),
     fetchCrossRef(augmentedQuery),
@@ -561,33 +876,95 @@ export const searchAcademicPapers = async (
 };
 
 export const searchPersianArt = async (query: string, period: HistoricalPeriod, forceGardenContext: boolean): Promise<ArtWork[]> => {
+    const rawQuery = (query || '').trim().toLowerCase();
+    const isDefaultQuery = !rawQuery || rawQuery === 'باغ' || rawQuery === 'نگارگری' || rawQuery === 'مینیاتور' || rawQuery === 'هنر' || rawQuery === 'پردیس';
     
-    // Construct Art-Specific Query
-    let artQuery = query;
-    
-    // Convert base query if it's purely Persian
-    if (isPersian(query)) {
-        artQuery += " " + translateToEnglishArtTerm(query);
+    // 1. Filter and match from the verified Persian Art Masterpiece Archive
+    let archiveMatches: ArtWork[] = [];
+    if (isDefaultQuery) {
+        archiveMatches = [...PERSIAN_ART_ARCHIVE];
+    } else {
+        const queryTerms = rawQuery.split(/\s+/).filter(t => t.length > 1);
+        archiveMatches = PERSIAN_ART_ARCHIVE.filter(art => {
+            const searchableText = `${art.title} ${art.artist} ${art.period} ${art.description || ''} ${art.medium || ''}`.toLowerCase();
+            return queryTerms.some(term => searchableText.includes(term));
+        });
     }
+
+    // Filter archive by Historical Period if specified
+    if (period !== HistoricalPeriod.ALL) {
+        const periodTerms = PERIOD_TERMS[period];
+        if (periodTerms) {
+            const faP = periodTerms.fa.toLowerCase();
+            const enP = periodTerms.en.toLowerCase();
+            const periodFiltered = archiveMatches.filter(a => 
+                a.period.toLowerCase().includes(faP) || 
+                a.period.toLowerCase().includes(enP) ||
+                (a.description && (a.description.toLowerCase().includes(faP) || a.description.toLowerCase().includes(enP)))
+            );
+            if (periodFiltered.length > 0) {
+                archiveMatches = periodFiltered;
+            }
+        }
+    }
+
+    // 2. Prepare Smart English & Persian Search Query for Live Open Access APIs
+    const englishTranslated = translateToEnglishArtTerm(rawQuery);
+    let apiQuery = englishTranslated;
 
     if (period !== HistoricalPeriod.ALL && PERIOD_TERMS[period]) {
-        artQuery += ` ${PERIOD_TERMS[period].en}`; // Museums are mostly English indexed
+        apiQuery += ` ${PERIOD_TERMS[period].en}`;
     }
 
-    if (forceGardenContext) {
-        artQuery += ` Garden Landscape`;
+    if (forceGardenContext && !apiQuery.toLowerCase().includes('garden')) {
+        apiQuery += ` Garden`;
     }
 
-    console.log(`Searching Art for: ${artQuery}`);
-    
-    // Parallel fetch
-    const [cleveland, chicago, met] = await Promise.all([
-        fetchClevelandArt(artQuery),
-        fetchChicagoArt(artQuery),
-        fetchMetMuseum(artQuery)
-    ]);
-    
-    return [...met, ...cleveland, ...chicago];
+    // Wikimedia search term (combines Persian & English for maximum coverage)
+    let wikiQuery = isDefaultQuery ? 'Persian miniature garden' : apiQuery;
+
+    console.log(`Searching Art for: API="${apiQuery}", Wiki="${wikiQuery}"`);
+
+    // 3. Parallel Live Search across Open Access Collections
+    try {
+        const [clevelandRes, metRes, wikiRes] = await Promise.allSettled([
+            fetchClevelandArt(apiQuery),
+            fetchMetMuseum(apiQuery),
+            fetchWikimediaArt(wikiQuery)
+        ]);
+
+        const liveArt: ArtWork[] = [];
+        if (clevelandRes.status === 'fulfilled') liveArt.push(...clevelandRes.value);
+        if (metRes.status === 'fulfilled') liveArt.push(...metRes.value);
+        if (wikiRes.status === 'fulfilled') liveArt.push(...wikiRes.value);
+
+        // 4. Combine matching archive with live discoveries
+        const combined = [...archiveMatches, ...liveArt];
+
+        const seenUrls = new Set<string>();
+        const seenTitles = new Set<string>();
+        const uniqueArt: ArtWork[] = [];
+
+        for (const item of combined) {
+            if (!item.imageUrl) continue;
+            const normTitle = item.title.trim().toLowerCase();
+            if (seenUrls.has(item.imageUrl) || seenTitles.has(normTitle)) continue;
+            
+            seenUrls.add(item.imageUrl);
+            seenTitles.add(normTitle);
+            uniqueArt.push(item);
+        }
+
+        // If specific search and nothing found at all, return empty (or default for generic empty queries)
+        if (uniqueArt.length === 0) {
+            return isDefaultQuery ? PERSIAN_ART_ARCHIVE.slice(0, 10) : [];
+        }
+
+        return uniqueArt;
+    } catch (e) {
+        console.warn("Live art search error, returning verified archive matches:", e);
+        return archiveMatches;
+    }
 };
 
 export const searchLiterature = async (query: string, forceGardenContext: boolean): Promise<Partial<Paper>[]> => {

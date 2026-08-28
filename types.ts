@@ -69,6 +69,8 @@ export interface Paper {
   // New fields for Visual Archive support
   docType?: 'paper' | 'artwork' | 'travelogue';
   thumbnailUrl?: string;
+  isPdf?: boolean;
+  pdfUrl?: string;
 }
 
 export interface ArtWork {
@@ -82,6 +84,12 @@ export interface ArtWork {
   museumUrl: string;
   department: string;
   medium: string;
+  description?: string;
+  culture?: string;
+  isPdf?: boolean;
+  pdfUrl?: string;
+  fileSize?: string;
+  pageCount?: number;
 }
 
 export interface TravelogueChunk {
